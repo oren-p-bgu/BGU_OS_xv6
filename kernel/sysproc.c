@@ -99,7 +99,7 @@ sys_uptime(void)
 // ======================================== ASSIGNMENT 1 ========================================
 
 uint64
-sys_pauses(void)
+sys_pause_system(void)
 {
     int seconds;
 
@@ -109,7 +109,7 @@ sys_pauses(void)
 }
 
 uint64
-sys_kills(void)
+sys_kill_system(void)
 {
     return kill_system();
 }

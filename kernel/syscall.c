@@ -92,12 +92,12 @@ extern uint64 sys_fork(void);
 extern uint64 sys_fstat(void);
 extern uint64 sys_getpid(void);
 extern uint64 sys_kill(void);
-extern uint64 sys_kills(void);  // Added for kill_system
+extern uint64 sys_kill_system(void);  // Added for kill_system
 extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_mknod(void);
 extern uint64 sys_open(void);
-extern uint64 sys_pauses(void); // Added for pause_system
+extern uint64 sys_pause_system(void); // Added for pause_system
 extern uint64 sys_pipe(void);
 extern uint64 sys_read(void);
 extern uint64 sys_sbrk(void);
@@ -129,8 +129,8 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
-[SYS_pauses]  sys_pauses, // Added for pause_system
-[SYS_kills]   sys_kills,  // Added for kill_system
+[SYS_pause_system]  sys_pause_system, // Added for pause_system
+[SYS_kill_system]   sys_kill_system,  // Added for kill_system
 };
 
 void

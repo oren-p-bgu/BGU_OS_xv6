@@ -663,11 +663,21 @@ int
 pause_system(int seconds)
 {
   // TODO: Fill out
+  return 0;
 }
 
 // Terminate all user processes.
 int
 kill_system(void)
 {
-  // TODO: Fill out
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    if(p->pid != 1 && p->pid != 2){ // If not init or shell
+      if (!kill(p->pid)){ // Something went wrong during kill.
+        return -1;
+      }
+    }
+  }
+  return 0;
 }
