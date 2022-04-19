@@ -101,11 +101,15 @@ sys_uptime(void)
 uint64
 sys_pauses(void)
 {
-    // TODO: Fill out
+    int seconds;
+
+    if(argint(0, &seconds) < 0)
+        return -1;
+    return pause_system(seconds);
 }
 
 uint64
 sys_kills(void)
 {
-    // TODO: Fill out
+    return kill_system();
 }
