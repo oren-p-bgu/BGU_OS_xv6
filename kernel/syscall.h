@@ -20,3 +20,5 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
+#define SYS_pauses 22  // Added for pause_system
+#define SYS_kills  23  // Added for kill_system

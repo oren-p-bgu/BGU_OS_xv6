@@ -95,3 +95,17 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// ======================================== ASSIGNMENT 1 ========================================
+
+uint64
+sys_pauses(void)
+{
+    // TODO: Fill out
+}
+
+uint64
+sys_kills(void)
+{
+    // TODO: Fill out
+}

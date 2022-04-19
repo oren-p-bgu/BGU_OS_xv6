@@ -654,3 +654,20 @@ procdump(void)
     printf("\n");
   }
 }
+
+// ======================================== ASSIGNMENT 1 ========================================
+
+// Pause all user processes for the number of seconds
+// specified by the second's integer parameter.
+int
+pause_system(int seconds)
+{
+  // TODO: Fill out
+}
+
+// Terminate all user processes.
+int
+kill_system(void)
+{
+  // TODO: Fill out
+}
