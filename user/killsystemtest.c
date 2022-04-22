@@ -3,15 +3,12 @@
 #include "user.h"
 
 void test_kill_system(int interval, int loop_size) {
-    int n_forks = 2;
-    for (int i = 0; i < n_forks; i++) {
-        fork();
-    }
+    int pid = getpid();
     for (int i = 0; i < loop_size; i++) {
-        if (i % interval == 0) {
-            printf("Kill system %i/%i completed.\n", i, loop_size);
+        if (i % interval == 0 && pid == getpid()) {
+            printf("kill system %d/%d completed.\n", i, loop_size);
         }
-        if (i == (int)(loop_size / 2)){
+        if (i == loop_size / 2) {
             kill_system();
         }
     }
