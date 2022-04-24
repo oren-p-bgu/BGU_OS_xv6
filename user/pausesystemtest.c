@@ -9,7 +9,7 @@ void test_pause_system(int interval, int pause_seconds, int loop_size) {
     }
     for (int i = 0; i < loop_size; i++) {
         if (i % interval == 0) {
-            printf("pause system %i/%i completed.\n", i, loop_size);
+            printf("pause system %d/%d completed.\n", i, loop_size);
         }
         if (i == (int)(loop_size / 2)){
             pause_system(pause_seconds);

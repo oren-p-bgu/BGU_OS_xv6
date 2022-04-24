@@ -15,6 +15,8 @@ struct proc *initproc;
 
 int nextpid = 1;
 struct spinlock pid_lock;
+static uint ticks0;
+static int numt = -1;
 
 extern void forkret(void);
 
@@ -428,7 +430,6 @@ void
 scheduler(void) {
     struct proc *p;
     struct cpu *c = mycpu();
-
     c->proc = 0;
     for (;;) {
         // Avoid deadlock by ensuring that devices can interrupt.
@@ -436,7 +437,20 @@ scheduler(void) {
 
         for (p = proc; p < &proc[NPROC]; p++) {
             acquire(&p->lock);
+
             if (p->state == RUNNABLE) {
+                //maybe here stop !
+                if(p->pid != SAFEPROC1 && p->pid != SAFEPROC2)
+                    if(numt > 0) {
+                        if (ticks - ticks0 < numt) {
+                            release(&p->lock);
+                            continue;
+                        }else
+                        {
+                            numt = -1;
+                        }
+                    }
+
                 // Switch to chosen process.  It is the process's job
                 // to release its lock and then reacquire it
                 // before jumping back to us.
@@ -465,19 +479,22 @@ sched(void)
 {
   int intena;
   struct proc *p = myproc();
-
+  struct cpu *mcpu = mycpu();
   if(!holding(&p->lock))
     panic("sched p->lock");
-  if(mycpu()->noff != 1)
+  if(mcpu->noff != 1)
     panic("sched locks");
   if(p->state == RUNNING)
     panic("sched running");
   if(intr_get())
     panic("sched interruptible");
+  //char c[] = {'A'+(char)p->pid - 1 ,'\0'};
+  //char f[] = {'A'+(char)p->pid - 1 ,'\0'};
+  //printf("%s%s",c,f);
 
-  intena = mycpu()->intena;
-  swtch(&p->context, &mycpu()->context);
-  mycpu()->intena = intena;
+  intena = mcpu->intena;
+  swtch(&p->context, &mcpu->context);
+  mcpu->intena = intena;
 }
 
 // Give up the CPU for one scheduling round.
@@ -638,9 +655,7 @@ procdump(void) {
 
 int
 pause_system(int seconds) {
-    int n;
-    uint ticks0;
-    struct proc *myp = myproc();
+    //struct proc *myp = myproc();
     if(seconds < 0) {
         printf("I am sorry, negative time is not an option.\n");
         return 22;
@@ -648,43 +663,36 @@ pause_system(int seconds) {
     //printf("\nI am from file proc.c, will try to sleep system for %d seconds\n", seconds);
 
     //printf("Lets put everybody else but me and system to sleep. I mean runnable.");
+
+
+    numt = seconds * 10;//10 ticks = 1 second
+    ticks0 = ticks;
     struct proc *p;
     for (p = proc; p < &proc[NPROC]; p++) {
+
         acquire(&p->lock);
-        if(p->state == RUNNING) {
-            //printf("\npid = %d",p->pid);
-            if (p->pid != myp->pid && p->pid != SAFEPROC1 &&
-                p->pid != SAFEPROC2) {
+        if (/*p->pid != myp->pid &&*/ p->pid != SAFEPROC1 &&
+            p->pid != SAFEPROC2) {
+            if (p->state == RUNNING) {
                 p->state = RUNNABLE;
             }
         }
-        release(&p->lock);
+       release(&p->lock);
     }
     //sleeping part!
     //printf("Now let's sleep!");
-    n = seconds * 10;//10 ticks = 1 second
-    acquire(&tickslock);
-    ticks0 = ticks;
-    while(ticks - ticks0 < n){
-        if(myproc()->killed){
-            release(&tickslock);
-            return -1;
-        }
-        sleep(&ticks, &tickslock);
-    }
-    release(&tickslock);
+    //acquire(&tickslock);
+    //release(&tickslock);
+
     //printf("Good morning");
     //printf("Lets run some other tasks.");
     //this is for the sched code, IDK why, but it has to be here...
-    acquire(&myp->lock);
-    myp->state = RUNNABLE;
-    sched();
-    //Yeah same story ^^, you acquire your lock, so you have to release it.
-    release(&myp->lock);
-    myp->state = RUNNING;
+
+    yield();
 
     return 0;
 }
+
 
 int
 kill_system() {
@@ -702,6 +710,8 @@ kill_system() {
         }
         release(&p->lock);
     }
+    acquire(&p->lock);
     myp->killed = 1;
+    release(&p->lock);
     return 0;
 }

@@ -1,6 +1,7 @@
 #include "kernel/types.h"
-#include "kernel/param.h"
-#include "user.h"
+#include "kernel/stat.h"
+#include "user/user.h"
+#include "kernel/types.h"
 
 void test_kill_system(int interval, int loop_size) {
     int pid = getpid();

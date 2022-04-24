@@ -95,7 +95,6 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
-
 uint64
 sys_pause_system(void){
     int secs;
@@ -103,6 +102,7 @@ sys_pause_system(void){
         return -1;
     return pause_system(secs);
 }
+
 
 uint64
 sys_kill_system(void){
