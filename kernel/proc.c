@@ -20,6 +20,9 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+void update_ticks_runnable(struct proc* p);
+void update_ticks_sleeping(struct proc* p);
+
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
 // memory model when using p->parent.
@@ -119,6 +122,10 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+
+  p->mean_ticks = 0;
+  p->last_ticks = 0;
+  p->last_runnable_time = ticks;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -243,8 +250,10 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
+  update_ticks_runnable(p);
 
-  release(&p->lock);
+
+    release(&p->lock);
 }
 
 // Grow or shrink user memory by n bytes.
@@ -313,6 +322,7 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+  update_ticks_runnable(np);
   release(&np->lock);
 
   return pid;
@@ -539,6 +549,7 @@ yield(void)
   struct proc *p = myproc();
   acquire(&p->lock);
   p->state = RUNNABLE;
+  update_ticks_runnable(p);
   sched();
   release(&p->lock);
 }
@@ -584,6 +595,7 @@ sleep(void *chan, struct spinlock *lk)
   // Go to sleep.
   p->chan = chan;
   p->state = SLEEPING;
+  update_ticks_sleeping(p);
 
   sched();
 
@@ -607,6 +619,7 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
+        update_ticks_runnable(p);
       }
       release(&p->lock);
     }
@@ -628,6 +641,7 @@ kill(int pid)
       if(p->state == SLEEPING){
         // Wake process from sleep().
         p->state = RUNNABLE;
+        update_ticks_runnable(p);
       }
       release(&p->lock);
       return 0;
@@ -721,4 +735,19 @@ kill_system(void)
     }
   }
   return 0;
+}
+
+// Updates tick info for scheduling when gone to RUNNABLE state
+void
+update_ticks_runnable(struct proc* p){
+    p->last_ticks = ticks - (p->last_runnable_time);
+    p->last_runnable_time=ticks;
+    p->mean_ticks = ((10-rate)* p->mean_ticks + p->last_ticks * rate)/10;
+}
+
+// Updates tick info for scheduling when gone to SLEEPING state
+void
+update_ticks_sleeping(struct proc* p){
+    p->last_ticks = ticks - (p->last_runnable_time);
+    p->mean_ticks = ((10-rate)* p->mean_ticks + p->last_ticks * rate)/10;
 }
