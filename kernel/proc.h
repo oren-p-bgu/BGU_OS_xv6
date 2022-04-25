@@ -110,6 +110,13 @@ struct proc {
   uint64 mean_ticks;           // Mean of ticks it takes for a CPU burst on the process
   uint64 last_ticks;           // Last amount of ticks it took for a CPU burst on the process
   uint64 last_runnable_time;   // The value of the global ticks variable at the time of the process changing to RUNNABLE
+  //Part 4
+  uint64 last_runnable_timep4;
+  uint64 last_running_timep4;
+  uint64 last_sleeping_timep4;
+  uint64 sleeping_time;
+  uint64 runnable_time;
+  uint64 running_time;
 };
 
 
