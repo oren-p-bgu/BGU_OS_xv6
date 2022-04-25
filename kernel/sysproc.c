@@ -108,3 +108,7 @@ uint64
 sys_kill_system(void){
     return kill_system();
 }
+uint64
+sys_print_stats(void){
+    return print_stats();
+}

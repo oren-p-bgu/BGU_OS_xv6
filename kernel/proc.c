@@ -30,6 +30,9 @@ static uint64 sleeping_processes_mean;
 static uint64 running_processes_mean;
 static uint64 runnable_process_mean;
 static uint64 numproc;
+static uint64 program_time;
+static uint64 cpu_utilization;
+static uint64 start_time;
 
 extern void forkret(void);
 
@@ -40,7 +43,6 @@ extern char trampoline[]; // trampoline.S
 void update_ticks_runnable(struct proc *p);
 
 void update_ticks_sleeping(struct proc *p);
-void change_state(struct proc *p,enum procstate toState);
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -73,15 +75,17 @@ procinit(void) {
     sleeping_processes_mean = ZERO;
     running_processes_mean = ZERO;
     runnable_process_mean = ZERO;
+    program_time = ZERO;
+    start_time = ticks;
 
     initlock(&pid_lock, "nextpid");
     initlock(&wait_lock, "wait_lock");
     for (p = proc; p < &proc[NPROC]; p++) {
         initlock(&p->lock, "proc");
 
-        p->sleeping_time = 0;
-        p->runnable_time = 0;
-        p->running_time = 0;
+        p->sleeping_time = ZERO;
+        p->runnable_time = ZERO;
+        p->running_time = ZERO;
 
         p->kstack = KSTACK((int) (p - proc));
     }
@@ -275,7 +279,8 @@ userinit(void) {
 
     safestrcpy(p->name, "initcode", sizeof(p->name));
     p->cwd = namei("/");
-    change_state(p,RUNNABLE);
+    p->state = RUNNABLE;
+    p->last_runnable_timep4 = ticks;
     update_ticks_runnable(p);
 
     release(&p->lock);
@@ -344,7 +349,8 @@ fork(void) {
     release(&wait_lock);
 
     acquire(&np->lock);
-    change_state(np,RUNNABLE);
+    np->state = RUNNABLE;
+    np->last_runnable_timep4 = ticks;
     update_ticks_runnable(np);
     release(&np->lock);
 
@@ -402,8 +408,13 @@ exit(int status) {
     acquire(&p->lock);
 
     p->xstate = status;
-    change_state(p,ZOMBIE);
-
+    p->running_time += ticks - p->last_running_timep4;
+    p->state = ZOMBIE;
+    sleeping_processes_mean = ((sleeping_processes_mean * numproc) + p->sleeping_time) / (numproc + 1);
+    running_processes_mean = ((running_processes_mean * numproc) + p->running_time) / (numproc + 1);
+    runnable_process_mean = ((runnable_process_mean * numproc) + p->runnable_time) / (numproc + 1);
+    program_time += p->running_time;
+    cpu_utilization = program_time / (ticks - start_time);
     release(&wait_lock);
 
     // Jump into the scheduler, never to return.
@@ -505,7 +516,9 @@ scheduler(void) {
             // Switch to chosen process.  It is the process's job
             // to release its lock and then reacquire it
             // before jumping back to us.
-            change_state(p,RUNNING);
+            p->runnable_time += ticks - p->last_runnable_timep4;
+            p->state = RUNNING;
+            p->last_running_timep4 = ticks;
             c->proc = p;
             swtch(&c->context, &p->context);
 
@@ -546,7 +559,9 @@ scheduler(void) {
             // Switch to chosen process.  It is the process's job
             // to release its lock and then reacquire it
             // before jumping back to us.
-            change_state(p,RUNNING);
+            p->runnable_time += ticks - p->last_runnable_timep4;
+            p->state = RUNNING;
+            p->last_running_timep4 = ticks;
             c->proc = p;
             swtch(&c->context, &p->context);
 
@@ -576,7 +591,9 @@ scheduler(void) {
 // Switch to chosen process.  It is the process's job
 // to release its lock and then reacquire it
 // before jumping back to us.
-                change_state(p,RUNNING);
+                p->runnable_time += ticks - p->last_runnable_timep4;
+                p->state = RUNNING;
+                p->last_running_timep4 = ticks;
                 c->proc = p;
                 swtch(&c->context, &p->context);
 
@@ -624,7 +641,9 @@ void
 yield(void) {
     struct proc *p = myproc();
     acquire(&p->lock);
-    change_state(p,RUNNABLE);
+    p->running_time += ticks - p->last_running_timep4;
+    p->state = RUNNABLE;
+    p->last_runnable_timep4 = ticks;
     update_ticks_runnable(p);
     sched();
     release(&p->lock);
@@ -668,7 +687,9 @@ sleep(void *chan, struct spinlock *lk) {
 
     // Go to sleep.
     p->chan = chan;
-    change_state(p,SLEEPING);
+    p->running_time += ticks - p->last_running_timep4;
+    p->state = SLEEPING;
+    p->last_sleeping_timep4 = ticks;
     update_ticks_sleeping(p);
 
     sched();
@@ -691,7 +712,9 @@ wakeup(void *chan) {
         if (p != myproc()) {
             acquire(&p->lock);
             if (p->state == SLEEPING && p->chan == chan) {
-                change_state(p,RUNNABLE);
+                p->sleeping_time += ticks - p->last_sleeping_timep4;
+                p->state = RUNNABLE;
+                p->last_runnable_timep4 = ticks;
                 update_ticks_runnable(p);
             }
             release(&p->lock);
@@ -712,7 +735,9 @@ kill(int pid) {
             p->killed = 1;
             if (p->state == SLEEPING) {
                 // Wake process from sleep().
-                change_state(p,RUNNABLE);
+                p->sleeping_time += ticks - p->last_sleeping_timep4;
+                p->state = RUNNABLE;
+                p->last_runnable_timep4 = ticks;
                 update_ticks_runnable(p);
             }
             release(&p->lock);
@@ -801,7 +826,9 @@ pause_system(int seconds) {
         if (/*p->pid != myp->pid &&*/ p->pid != SAFEPROC1 &&
                                       p->pid != SAFEPROC2) {
             if (p->state == RUNNING) {
-                change_state(p,RUNNABLE);
+                p->running_time += ticks - p->last_running_timep4;
+                p->state = RUNNABLE;
+                p->last_runnable_timep4 = ticks;
             }
         }
         release(&p->lock);
@@ -832,7 +859,9 @@ kill_system() {
             p->killed = 1;
             if (p->state == SLEEPING) {
                 // Wake process from sleep().
-                change_state(p,RUNNABLE);
+                p->sleeping_time += ticks - p->last_sleeping_timep4;
+                p->state = RUNNABLE;
+                p->last_runnable_timep4 = ticks;
             }
         }
         release(&p->lock);
@@ -842,7 +871,11 @@ kill_system() {
     release(&myp->lock);
     return 0;
 }
-
+int
+print_stats(){
+    printf("Prog Time: %d\nCPU Util: %d",program_time,cpu_utilization);
+    return 0;
+}
 // Updates tick info for scheduling when gone to RUNNABLE state
 void
 update_ticks_runnable(struct proc *p) {
@@ -856,44 +889,4 @@ void
 update_ticks_sleeping(struct proc *p) {
     p->last_ticks = ticks - (p->last_runnable_time);
     p->mean_ticks = ((10 - rate) * p->mean_ticks + p->last_ticks * rate) / 10;
-}
-
-void change_state(struct proc *p,enum procstate toSate){
-    enum procstate lastState = p->state;
-    uint64 lasttime = ticks;
-    uint64 npr = numproc;
-    switch (lastState) {
-        case SLEEPING:
-            p->sleeping_time += lasttime - p->last_sleeping_timep4;
-            break;
-        case RUNNING:
-            p->running_time += lasttime - p->last_running_timep4;
-            break;
-        case RUNNABLE:
-            p->runnable_time += lasttime - p->last_runnable_timep4;
-            break;
-        default:
-            break;
-    }
-    p->state = toSate;
-    lasttime = ticks;
-    switch (toSate) {
-        case SLEEPING:
-            p->last_sleeping_timep4 = lasttime;
-            break;
-        case RUNNING:
-            p->last_running_timep4 = lasttime;
-            break;
-        case RUNNABLE:
-            p->last_runnable_timep4 = lasttime;
-            break;
-        case ZOMBIE:
-            //Part 4
-            sleeping_processes_mean = ((sleeping_processes_mean * npr) + p->sleeping_time) / (npr + 1);
-            running_processes_mean = ((running_processes_mean * npr) + p->running_time) / (npr + 1);
-            runnable_process_mean = ((runnable_process_mean * npr) + p->runnable_time) / (npr + 1);
-            break;
-        default:
-            break;
-    }
 }
