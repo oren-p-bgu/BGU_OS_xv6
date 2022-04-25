@@ -112,4 +112,4 @@ struct proc {
   uint64 last_runnable_time;   // The value of the global ticks variable at the time of the process changing to RUNNABLE
 };
 
-uint64 rate = 5;
+
