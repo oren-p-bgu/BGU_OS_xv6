@@ -105,4 +105,11 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  // Assignment 1
+  uint64 mean_ticks;           // Mean of ticks it takes for a CPU burst on the process
+  uint64 last_ticks;           // Last amount of ticks it took for a CPU burst on the process
+  uint64 last_runnable_time;   // The value of the global ticks variable at the time of the process changing to RUNNABLE
 };
+
+

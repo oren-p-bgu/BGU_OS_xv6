@@ -7,6 +7,9 @@
 #include "defs.h"
 #define SAFEPROC1 1
 #define SAFEPROC2 2
+
+uint64 rate = 5;
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -23,6 +26,10 @@ extern void forkret(void);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
+
+void update_ticks_runnable(struct proc *p);
+
+void update_ticks_sleeping(struct proc *p);
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -120,6 +127,10 @@ allocproc(void) {
     found:
     p->pid = allocpid();
     p->state = USED;
+
+    p->mean_ticks = 0;
+    p->last_ticks = 0;
+    p->last_runnable_time = ticks;
 
     // Allocate a trapframe page.
     if ((p->trapframe = (struct trapframe *) kalloc()) == 0) {
@@ -240,6 +251,7 @@ userinit(void) {
     p->cwd = namei("/");
 
     p->state = RUNNABLE;
+    update_ticks_runnable(p);
 
     release(&p->lock);
 }
@@ -308,6 +320,7 @@ fork(void) {
 
     acquire(&np->lock);
     np->state = RUNNABLE;
+    update_ticks_runnable(np);
     release(&np->lock);
 
     return pid;
@@ -435,7 +448,66 @@ scheduler(void) {
         // Avoid deadlock by ensuring that devices can interrupt.
         intr_on();
 
-        for (p = proc; p < &proc[NPROC]; p++) {
+    #ifdef SJF // Shortest Job First Scheduling Scheme
+        // printf("SJF"); //For quick debug of which is chosen
+        int min_mean_ticks = -1;
+        struct proc *min_p =proc;
+
+        for(p = proc; p < &proc[NPROC]; p++) { // Find the process with the minimum mean tick time.
+            if(p->state == RUNNABLE && (min_mean_ticks == -1 || (min_mean_ticks != -1 && min_mean_ticks > p->mean_ticks))) {
+                min_mean_ticks = p->mean_ticks;
+                min_p = p;
+            }
+        }
+
+            p = min_p;
+
+          acquire(&p->lock);
+          if(p->state == RUNNABLE) {
+            // Switch to chosen process.  It is the process's job
+            // to release its lock and then reacquire it
+            // before jumping back to us.
+            p->state = RUNNING;
+            c->proc = p;
+            swtch(&c->context, &p->context);
+
+            // Process is done running for now.
+            // It should have changed its p->state before coming back.
+            c->proc = 0;
+          }
+          release(&p->lock);
+#endif
+#ifdef FCFS // First Come First Serve Scheduling Scheme
+        //printf("FCFS"); //For quick debug of which is chosen
+      int min_last_runnable_time = -1;
+      struct proc *min_p =proc;
+
+      for(p = proc; p < &proc[NPROC]; p++) { // Find the process with the minimum mean tick time.
+          if(p->state == RUNNABLE && (min_last_runnable_time == -1 || (min_last_runnable_time != -1 && min_last_runnable_time > p->last_runnable_time))) {
+              min_last_runnable_time = p->mean_ticks;
+              min_p = p;
+          }
+      }
+
+          p = min_p;
+
+        acquire(&p->lock);
+        if(p->state == RUNNABLE) {
+          // Switch to chosen process.  It is the process's job
+          // to release its lock and then reacquire it
+          // before jumping back to us.
+          p->state = RUNNING;
+          c->proc = p;
+          swtch(&c->context, &p->context);
+
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          c->proc = 0;
+        }
+        release(&p->lock);
+#endif
+#ifdef DEFAULT // Default (Round Robin) Scheduling Policy
+        // printf("Round Robin"); //For quick debug of which is chosen    for (p = proc; p < &proc[NPROC]; p++) {
             acquire(&p->lock);
 
             if (p->state == RUNNABLE) {
@@ -464,6 +536,7 @@ scheduler(void) {
             }
             release(&p->lock);
         }
+  #endif
     }
 }
 
@@ -475,26 +548,25 @@ scheduler(void) {
 // break in the few places where a lock is held but
 // there's no process.
 void
-sched(void)
-{
-  int intena;
-  struct proc *p = myproc();
+sched(void) {
+    int intena;
+    struct proc *p = myproc();
   struct cpu *mcpu = mycpu();
-  if(!holding(&p->lock))
-    panic("sched p->lock");
-  if(mcpu->noff != 1)
-    panic("sched locks");
-  if(p->state == RUNNING)
-    panic("sched running");
-  if(intr_get())
-    panic("sched interruptible");
+    if (!holding(&p->lock))
+        panic("sched p->lock");
+    if (mcpu->noff != 1)
+        panic("sched locks");
+    if (p->state == RUNNING)
+        panic("sched running");
+    if (intr_get())
+        panic("sched interruptible");
   //char c[] = {'A'+(char)p->pid - 1 ,'\0'};
   //char f[] = {'A'+(char)p->pid - 1 ,'\0'};
   //printf("%s%s",c,f);
 
-  intena = mcpu->intena;
-  swtch(&p->context, &mcpu->context);
-  mcpu->intena = intena;
+    intena = mcpu->intena;
+    swtch(&p->context, &mcpu->context);
+    mcpu->intena = intena;
 }
 
 // Give up the CPU for one scheduling round.
@@ -503,6 +575,7 @@ yield(void) {
     struct proc *p = myproc();
     acquire(&p->lock);
     p->state = RUNNABLE;
+    update_ticks_runnable(p);
     sched();
     release(&p->lock);
 }
@@ -546,6 +619,7 @@ sleep(void *chan, struct spinlock *lk) {
     // Go to sleep.
     p->chan = chan;
     p->state = SLEEPING;
+    update_ticks_sleeping(p);
 
     sched();
 
@@ -568,7 +642,7 @@ wakeup(void *chan) {
             acquire(&p->lock);
             if (p->state == SLEEPING && p->chan == chan) {
                 p->state = RUNNABLE;
-            }
+            update_ticks_runnable(p);}
             release(&p->lock);
         }
     }
@@ -588,7 +662,7 @@ kill(int pid) {
             if (p->state == SLEEPING) {
                 // Wake process from sleep().
                 p->state = RUNNABLE;
-            }
+            update_ticks_runnable(p);}
             release(&p->lock);
             return 0;
         }
@@ -710,8 +784,23 @@ kill_system() {
         }
         release(&p->lock);
     }
-    acquire(&p->lock);
+    acquire(&myp->lock);
     myp->killed = 1;
-    release(&p->lock);
+    release(&myp->lock);
     return 0;
+}
+
+// Updates tick info for scheduling when gone to RUNNABLE state
+void
+update_ticks_runnable(struct proc *p) {
+    p->last_ticks = ticks - (p->last_runnable_time);
+    p->last_runnable_time = ticks;
+    p->mean_ticks = ((10 - rate) * p->mean_ticks + p->last_ticks * rate) / 10;
+}
+
+// Updates tick info for scheduling when gone to SLEEPING state
+void
+update_ticks_sleeping(struct proc *p) {
+    p->last_ticks = ticks - (p->last_runnable_time);
+    p->mean_ticks = ((10 - rate) * p->mean_ticks + p->last_ticks * rate) / 10;
 }
