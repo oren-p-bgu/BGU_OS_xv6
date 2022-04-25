@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+
 #define SAFEPROC1 1
 #define SAFEPROC2 2
 
@@ -448,22 +449,33 @@ scheduler(void) {
         // Avoid deadlock by ensuring that devices can interrupt.
         intr_on();
 
-    #ifdef SJF // Shortest Job First Scheduling Scheme
+#ifdef SJF // Shortest Job First Scheduling Scheme
         // printf("SJF"); //For quick debug of which is chosen
         int min_mean_ticks = -1;
-        struct proc *min_p =proc;
+        struct proc *min_p = proc;
 
-        for(p = proc; p < &proc[NPROC]; p++) { // Find the process with the minimum mean tick time.
-            if(p->state == RUNNABLE && (min_mean_ticks == -1 || (min_mean_ticks != -1 && min_mean_ticks > p->mean_ticks))) {
+        for (p = proc; p < &proc[NPROC]; p++) { // Find the process with the minimum mean tick time.
+            if (p->state == RUNNABLE &&
+                (min_mean_ticks == -1 || (min_mean_ticks != -1 && min_mean_ticks > p->mean_ticks))) {
                 min_mean_ticks = p->mean_ticks;
                 min_p = p;
             }
         }
 
-            p = min_p;
+        p = min_p;
 
-          acquire(&p->lock);
-          if(p->state == RUNNABLE) {
+        acquire(&p->lock);
+        if (p->state == RUNNABLE) {
+            //TODO: Fix this in regard to the time and stuff..
+            if (p->pid != SAFEPROC1 && p->pid != SAFEPROC2)
+                if (numt > 0) {
+                    if (ticks - ticks0 < numt) {
+                        release(&p->lock);
+                        continue;
+                    } else {
+                        numt = -1;
+                    }
+                }
             // Switch to chosen process.  It is the process's job
             // to release its lock and then reacquire it
             // before jumping back to us.
@@ -474,69 +486,81 @@ scheduler(void) {
             // Process is done running for now.
             // It should have changed its p->state before coming back.
             c->proc = 0;
-          }
-          release(&p->lock);
+        }
+        release(&p->lock);
 #endif
 #ifdef FCFS // First Come First Serve Scheduling Scheme
         //printf("FCFS"); //For quick debug of which is chosen
-      int min_last_runnable_time = -1;
-      struct proc *min_p =proc;
+        int min_last_runnable_time = -1;
+        struct proc *min_p = proc;
 
-      for(p = proc; p < &proc[NPROC]; p++) { // Find the process with the minimum mean tick time.
-          if(p->state == RUNNABLE && (min_last_runnable_time == -1 || (min_last_runnable_time != -1 && min_last_runnable_time > p->last_runnable_time))) {
-              min_last_runnable_time = p->mean_ticks;
-              min_p = p;
-          }
-      }
+        for (p = proc; p < &proc[NPROC]; p++) { // Find the process with the minimum mean tick time.
+            if (p->state == RUNNABLE && (min_last_runnable_time == -1 || (min_last_runnable_time != -1 &&
+                                                                          min_last_runnable_time >
+                                                                          p->last_runnable_time))) {
+                min_last_runnable_time = p->mean_ticks;
+                min_p = p;
+            }
+        }
 
-          p = min_p;
+        p = min_p;
 
         acquire(&p->lock);
-        if(p->state == RUNNABLE) {
-          // Switch to chosen process.  It is the process's job
-          // to release its lock and then reacquire it
-          // before jumping back to us.
-          p->state = RUNNING;
-          c->proc = p;
-          swtch(&c->context, &p->context);
+        if (p->state == RUNNABLE) {
+            //TODO: Fix this in regard to the time and stuff..
+            if (p->pid != SAFEPROC1 && p->pid != SAFEPROC2)
+                if (numt > 0) {
+                    if (ticks - ticks0 < numt) {
+                        release(&p->lock);
+                        continue;
+                    } else {
+                        numt = -1;
+                    }
+                }
+            // Switch to chosen process.  It is the process's job
+            // to release its lock and then reacquire it
+            // before jumping back to us.
+            p->state = RUNNING;
+            c->proc = p;
+            swtch(&c->context, &p->context);
 
-          // Process is done running for now.
-          // It should have changed its p->state before coming back.
-          c->proc = 0;
+            // Process is done running for now.
+            // It should have changed its p->state before coming back.
+            c->proc = 0;
         }
         release(&p->lock);
 #endif
 #ifdef DEFAULT // Default (Round Robin) Scheduling Policy
-        // printf("Round Robin"); //For quick debug of which is chosen    for (p = proc; p < &proc[NPROC]; p++) {
+        // printf("Round Robin"); //For quick debug of which is chosen
+        for (p = proc; p < &proc[NPROC]; p++) {
             acquire(&p->lock);
 
             if (p->state == RUNNABLE) {
-                //maybe here stop !
-                if(p->pid != SAFEPROC1 && p->pid != SAFEPROC2)
-                    if(numt > 0) {
+//maybe here stop !
+                if (p->pid != SAFEPROC1 && p->pid != SAFEPROC2)
+                    if (numt > 0) {
                         if (ticks - ticks0 < numt) {
                             release(&p->lock);
                             continue;
-                        }else
-                        {
+                        } else {
                             numt = -1;
                         }
                     }
 
-                // Switch to chosen process.  It is the process's job
-                // to release its lock and then reacquire it
-                // before jumping back to us.
+// Switch to chosen process.  It is the process's job
+// to release its lock and then reacquire it
+// before jumping back to us.
                 p->state = RUNNING;
                 c->proc = p;
                 swtch(&c->context, &p->context);
 
-                // Process is done running for now.
-                // It should have changed its p->state before coming back.
+// Process is done running for now.
+// It should have changed its p->state before coming back.
                 c->proc = 0;
             }
             release(&p->lock);
         }
-  #endif
+#endif
     }
 }
 
@@ -551,7 +575,7 @@ void
 sched(void) {
     int intena;
     struct proc *p = myproc();
-  struct cpu *mcpu = mycpu();
+    struct cpu *mcpu = mycpu();
     if (!holding(&p->lock))
         panic("sched p->lock");
     if (mcpu->noff != 1)
@@ -560,9 +584,9 @@ sched(void) {
         panic("sched running");
     if (intr_get())
         panic("sched interruptible");
-  //char c[] = {'A'+(char)p->pid - 1 ,'\0'};
-  //char f[] = {'A'+(char)p->pid - 1 ,'\0'};
-  //printf("%s%s",c,f);
+    //char c[] = {'A'+(char)p->pid - 1 ,'\0'};
+    //char f[] = {'A'+(char)p->pid - 1 ,'\0'};
+    //printf("%s%s",c,f);
 
     intena = mcpu->intena;
     swtch(&p->context, &mcpu->context);
@@ -642,7 +666,8 @@ wakeup(void *chan) {
             acquire(&p->lock);
             if (p->state == SLEEPING && p->chan == chan) {
                 p->state = RUNNABLE;
-            update_ticks_runnable(p);}
+                update_ticks_runnable(p);
+            }
             release(&p->lock);
         }
     }
@@ -662,7 +687,8 @@ kill(int pid) {
             if (p->state == SLEEPING) {
                 // Wake process from sleep().
                 p->state = RUNNABLE;
-            update_ticks_runnable(p);}
+                update_ticks_runnable(p);
+            }
             release(&p->lock);
             return 0;
         }
@@ -730,7 +756,7 @@ procdump(void) {
 int
 pause_system(int seconds) {
     //struct proc *myp = myproc();
-    if(seconds < 0) {
+    if (seconds < 0) {
         printf("I am sorry, negative time is not an option.\n");
         return 22;
     }
@@ -746,12 +772,12 @@ pause_system(int seconds) {
 
         acquire(&p->lock);
         if (/*p->pid != myp->pid &&*/ p->pid != SAFEPROC1 &&
-            p->pid != SAFEPROC2) {
+                                      p->pid != SAFEPROC2) {
             if (p->state == RUNNING) {
                 p->state = RUNNABLE;
             }
         }
-       release(&p->lock);
+        release(&p->lock);
     }
     //sleeping part!
     //printf("Now let's sleep!");
