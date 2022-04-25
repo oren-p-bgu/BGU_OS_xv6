@@ -70,13 +70,16 @@ proc_mapstacks(pagetable_t kpgtbl) {
 void
 procinit(void) {
     struct proc *p;
-
+    uint64 tiks;
     //Part 4
     sleeping_processes_mean = ZERO;
     running_processes_mean = ZERO;
     runnable_process_mean = ZERO;
     program_time = ZERO;
-    start_time = ticks;
+    acquire(&tickslock);
+    tiks = ticks;
+    release(&tickslock);
+    start_time = tiks;
 
     initlock(&pid_lock, "nextpid");
     initlock(&wait_lock, "wait_lock");
@@ -138,7 +141,7 @@ allocpid() {
 static struct proc *
 allocproc(void) {
     struct proc *p;
-
+    uint64 tiks;
     for (p = proc; p < &proc[NPROC]; p++) {
         acquire(&p->lock);
         if (p->state == UNUSED) {
@@ -160,7 +163,10 @@ allocproc(void) {
 
     p->mean_ticks = 0;
     p->last_ticks = 0;
-    p->last_runnable_time = ticks;
+    acquire(&tickslock);
+    tiks = ticks;
+    release(&tickslock);
+    p->last_runnable_time = tiks;
 
     // Allocate a trapframe page.
     if ((p->trapframe = (struct trapframe *) kalloc()) == 0) {
@@ -264,6 +270,7 @@ uchar initcode[] = {
 void
 userinit(void) {
     struct proc *p;
+    uint64 tiks;
 
     p = allocproc();
     initproc = p;
@@ -280,7 +287,10 @@ userinit(void) {
     safestrcpy(p->name, "initcode", sizeof(p->name));
     p->cwd = namei("/");
     p->state = RUNNABLE;
-    p->last_runnable_timep4 = ticks;
+    acquire(&tickslock);
+    tiks = ticks;
+    release(&tickslock);
+    p->last_runnable_timep4 = tiks;
     update_ticks_runnable(p);
 
     release(&p->lock);
@@ -312,6 +322,7 @@ fork(void) {
     int i, pid;
     struct proc *np;
     struct proc *p = myproc();
+    uint64 tiks;
 
     // Allocate process.
     if ((np = allocproc()) == 0) {
@@ -350,7 +361,10 @@ fork(void) {
 
     acquire(&np->lock);
     np->state = RUNNABLE;
-    np->last_runnable_timep4 = ticks;
+    acquire(&tickslock);
+    tiks = ticks;
+    release(&tickslock);
+    np->last_runnable_timep4 = tiks;
     update_ticks_runnable(np);
     release(&np->lock);
 
@@ -377,6 +391,10 @@ reparent(struct proc *p) {
 void
 exit(int status) {
     struct proc *p = myproc();
+    uint64 tiks;
+    acquire(&tickslock);
+    tiks = ticks;
+    release(&tickslock);
     numproc +=1;
     if (p == initproc)
         panic("init exiting");
@@ -408,13 +426,14 @@ exit(int status) {
     acquire(&p->lock);
 
     p->xstate = status;
-    p->running_time += ticks - p->last_running_timep4;
+
+    p->running_time += tiks - p->last_running_timep4;
     p->state = ZOMBIE;
     sleeping_processes_mean = ((sleeping_processes_mean * numproc) + p->sleeping_time) / (numproc + 1);
     running_processes_mean = ((running_processes_mean * numproc) + p->running_time) / (numproc + 1);
     runnable_process_mean = ((runnable_process_mean * numproc) + p->runnable_time) / (numproc + 1);
     program_time += p->running_time;
-    cpu_utilization = program_time / (ticks - start_time);
+    cpu_utilization = (program_time*100) / (tiks - start_time);
     release(&wait_lock);
 
     // Jump into the scheduler, never to return.
@@ -481,6 +500,7 @@ void
 scheduler(void) {
     struct proc *p;
     struct cpu *c = mycpu();
+    uint64 tiks;
     c->proc = 0;
     for (;;) {
         // Avoid deadlock by ensuring that devices can interrupt.
@@ -504,9 +524,13 @@ scheduler(void) {
         acquire(&p->lock);
         if (p->state == RUNNABLE) {
             //TODO: Fix this in regard to the time and stuff..
+            acquire(&tickslock);
+            tiks = ticks;
+            release(&tickslock);
             if (p->pid != SAFEPROC1 && p->pid != SAFEPROC2)
                 if (numt > 0) {
-                    if (ticks - ticks0 < numt) {
+                    if (tiks - ticks0 < numt) {
+
                         release(&p->lock);
                         continue;
                     } else {
@@ -516,9 +540,9 @@ scheduler(void) {
             // Switch to chosen process.  It is the process's job
             // to release its lock and then reacquire it
             // before jumping back to us.
-            p->runnable_time += ticks - p->last_runnable_timep4;
+            p->runnable_time += tiks - p->last_runnable_timep4;
             p->state = RUNNING;
-            p->last_running_timep4 = ticks;
+            p->last_running_timep4 = tiks;
             c->proc = p;
             swtch(&c->context, &p->context);
 
@@ -546,10 +570,12 @@ scheduler(void) {
 
         acquire(&p->lock);
         if (p->state == RUNNABLE) {
-            //TODO: Fix this in regard to the time and stuff..
+            acquire(&tickslock);
+            tiks = ticks;
+            release(&tickslock);
             if (p->pid != SAFEPROC1 && p->pid != SAFEPROC2)
                 if (numt > 0) {
-                    if (ticks - ticks0 < numt) {
+                    if (tiks - ticks0 < numt) {
                         release(&p->lock);
                         continue;
                     } else {
@@ -559,9 +585,10 @@ scheduler(void) {
             // Switch to chosen process.  It is the process's job
             // to release its lock and then reacquire it
             // before jumping back to us.
-            p->runnable_time += ticks - p->last_runnable_timep4;
+
+            p->runnable_time += tiks - p->last_runnable_timep4;
             p->state = RUNNING;
-            p->last_running_timep4 = ticks;
+            p->last_running_timep4 = tiks;
             c->proc = p;
             swtch(&c->context, &p->context);
 
@@ -578,9 +605,13 @@ scheduler(void) {
 
             if (p->state == RUNNABLE) {
 //maybe here stop !
+                acquire(&tickslock);
+                tiks = ticks;
+                release(&tickslock);
                 if (p->pid != SAFEPROC1 && p->pid != SAFEPROC2)
                     if (numt > 0) {
-                        if (ticks - ticks0 < numt) {
+
+                        if (tiks - ticks0 < numt) {
                             release(&p->lock);
                             continue;
                         } else {
@@ -591,9 +622,9 @@ scheduler(void) {
 // Switch to chosen process.  It is the process's job
 // to release its lock and then reacquire it
 // before jumping back to us.
-                p->runnable_time += ticks - p->last_runnable_timep4;
+                p->runnable_time += tiks - p->last_runnable_timep4;
                 p->state = RUNNING;
-                p->last_running_timep4 = ticks;
+                p->last_running_timep4 = tiks;
                 c->proc = p;
                 swtch(&c->context, &p->context);
 
@@ -640,10 +671,14 @@ sched(void) {
 void
 yield(void) {
     struct proc *p = myproc();
+    uint64 tiks;
+    acquire(&tickslock);
+    tiks = ticks;
+    release(&tickslock);
     acquire(&p->lock);
-    p->running_time += ticks - p->last_running_timep4;
+    p->running_time += tiks - p->last_running_timep4;
     p->state = RUNNABLE;
-    p->last_runnable_timep4 = ticks;
+    p->last_runnable_timep4 = tiks;
     update_ticks_runnable(p);
     sched();
     release(&p->lock);
@@ -674,7 +709,10 @@ forkret(void) {
 void
 sleep(void *chan, struct spinlock *lk) {
     struct proc *p = myproc();
-
+    uint64 tiks;
+    acquire(&tickslock);
+    tiks = ticks;
+    release(&tickslock);
     // Must acquire p->lock in order to
     // change p->state and then call sched.
     // Once we hold p->lock, we can be
@@ -687,9 +725,9 @@ sleep(void *chan, struct spinlock *lk) {
 
     // Go to sleep.
     p->chan = chan;
-    p->running_time += ticks - p->last_running_timep4;
+    p->running_time += tiks - p->last_running_timep4;
     p->state = SLEEPING;
-    p->last_sleeping_timep4 = ticks;
+    p->last_sleeping_timep4 = tiks;
     update_ticks_sleeping(p);
 
     sched();
@@ -707,14 +745,17 @@ sleep(void *chan, struct spinlock *lk) {
 void
 wakeup(void *chan) {
     struct proc *p;
-
+    uint64 tiks;
     for (p = proc; p < &proc[NPROC]; p++) {
         if (p != myproc()) {
             acquire(&p->lock);
             if (p->state == SLEEPING && p->chan == chan) {
-                p->sleeping_time += ticks - p->last_sleeping_timep4;
+                acquire(&tickslock);
+                tiks = ticks;
+                release(&tickslock);
+                p->sleeping_time += tiks - p->last_sleeping_timep4;
                 p->state = RUNNABLE;
-                p->last_runnable_timep4 = ticks;
+                p->last_runnable_timep4 = tiks;
                 update_ticks_runnable(p);
             }
             release(&p->lock);
@@ -728,16 +769,19 @@ wakeup(void *chan) {
 int
 kill(int pid) {
     struct proc *p;
-
+    uint64 tiks;
     for (p = proc; p < &proc[NPROC]; p++) {
         acquire(&p->lock);
         if (p->pid == pid) {
             p->killed = 1;
             if (p->state == SLEEPING) {
                 // Wake process from sleep().
-                p->sleeping_time += ticks - p->last_sleeping_timep4;
+                acquire(&tickslock);
+                tiks = ticks;
+                release(&tickslock);
+                p->sleeping_time += tiks - p->last_sleeping_timep4;
                 p->state = RUNNABLE;
-                p->last_runnable_timep4 = ticks;
+                p->last_runnable_timep4 = tiks;
                 update_ticks_runnable(p);
             }
             release(&p->lock);
@@ -802,7 +846,7 @@ procdump(void) {
         printf("%d %s %s", p->pid, state, p->name);
         printf("\n");
     }
-    printf("Part 4:\nMSleep : %d\nMRunning : %d\nMRunnable : %d\nNum Of Proc. : %d",sleeping_processes_mean,running_processes_mean,runnable_process_mean, numproc);
+
 }
 
 int
@@ -816,9 +860,12 @@ pause_system(int seconds) {
 
     //printf("Lets put everybody else but me and system to sleep. I mean runnable.");
 
-
+    uint64 tiks;
+    acquire(&tickslock);
+    tiks = ticks;
+    release(&tickslock);
     numt = seconds * 10;//10 ticks = 1 second
-    ticks0 = ticks;
+    ticks0 = tiks;
     struct proc *p;
     for (p = proc; p < &proc[NPROC]; p++) {
 
@@ -826,9 +873,9 @@ pause_system(int seconds) {
         if (/*p->pid != myp->pid &&*/ p->pid != SAFEPROC1 &&
                                       p->pid != SAFEPROC2) {
             if (p->state == RUNNING) {
-                p->running_time += ticks - p->last_running_timep4;
+                p->running_time += tiks - p->last_running_timep4;
                 p->state = RUNNABLE;
-                p->last_runnable_timep4 = ticks;
+                p->last_runnable_timep4 = tiks;
             }
         }
         release(&p->lock);
@@ -852,6 +899,10 @@ int
 kill_system() {
     struct proc *myp = myproc();
     struct proc *p;
+uint64 tiks;
+    acquire(&tickslock);
+    tiks = ticks;
+    release(&tickslock);
     for (p = proc; p < &proc[NPROC]; p++) {
         acquire(&p->lock);
         if (p->pid != myp->pid && p->pid != SAFEPROC1 &&
@@ -859,9 +910,9 @@ kill_system() {
             p->killed = 1;
             if (p->state == SLEEPING) {
                 // Wake process from sleep().
-                p->sleeping_time += ticks - p->last_sleeping_timep4;
+                p->sleeping_time += tiks - p->last_sleeping_timep4;
                 p->state = RUNNABLE;
-                p->last_runnable_timep4 = ticks;
+                p->last_runnable_timep4 = tiks;
             }
         }
         release(&p->lock);
@@ -873,20 +924,29 @@ kill_system() {
 }
 int
 print_stats(){
-    printf("Prog Time: %d\nCPU Util: %d",program_time,cpu_utilization);
+    printf("Stats:\nMean Sleep : %d\nMean Running : %d\nMean Runnable : %d\nNum Of Proc. : %d\n",sleeping_processes_mean,running_processes_mean,runnable_process_mean, numproc);
+    printf("Program Time: %d\nCPU Utilization: %d",program_time,cpu_utilization);
     return 0;
 }
 // Updates tick info for scheduling when gone to RUNNABLE state
 void
 update_ticks_runnable(struct proc *p) {
-    p->last_ticks = ticks - (p->last_runnable_time);
-    p->last_runnable_time = ticks;
+    uint64 tiks;
+    acquire(&tickslock);
+    tiks = ticks;
+    release(&tickslock);
+    p->last_ticks = tiks - (p->last_runnable_time);
+    p->last_runnable_time = tiks;
     p->mean_ticks = ((10 - rate) * p->mean_ticks + p->last_ticks * rate) / 10;
 }
 
 // Updates tick info for scheduling when gone to SLEEPING state
 void
 update_ticks_sleeping(struct proc *p) {
-    p->last_ticks = ticks - (p->last_runnable_time);
+uint64 tiks;
+    acquire(&tickslock);
+    tiks = ticks;
+    release(&tickslock);
+    p->last_ticks = tiks - (p->last_runnable_time);
     p->mean_ticks = ((10 - rate) * p->mean_ticks + p->last_ticks * rate) / 10;
 }
