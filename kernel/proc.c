@@ -91,10 +91,15 @@ int
 allocpid() {
   int pid;
   
-  acquire(&pid_lock);
-  pid = nextpid;
-  nextpid = nextpid + 1;
-  release(&pid_lock);
+  // acquire(&pid_lock);
+  // pid = nextpid;
+  // nextpid = nextpid + 1;
+  // release(&pid_lock);
+
+  // CAS Task 4
+  do{
+      pid = nextpid;
+  } while(cas(&nextpid, pid, pid+1));
 
   return pid;
 }
