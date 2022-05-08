@@ -18,6 +18,8 @@ struct spinlock pid_lock;
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
+extern uint64 cas(volatile void *addr, int expected, int newval);   // CAS Task 1
+
 extern char trampoline[]; // trampoline.S
 
 // helps ensure that wakeups of wait()ing
