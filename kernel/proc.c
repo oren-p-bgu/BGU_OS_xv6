@@ -956,5 +956,5 @@ int
 get_cpu(void)
 {
   printf("from proc : actual %d\nfrom proc: according to proc %d\n",getCPUid_MIKE(),myproc()->lastCpuRan-1);
-  return myproc()->lastCpuRan;
+  return myproc()->lastCpuRan-1;
 }
