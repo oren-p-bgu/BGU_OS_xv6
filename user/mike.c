@@ -7,8 +7,11 @@
 int
 main(void)
 {
-  printf("I know my cpu is %d",get_cpu());
-  printf("I will change it to 1",set_cpu(1));
-  printf("Now my cpu is %d",get_cpu());
+  printf("mike: I know my cpu is %d\n",get_cpu());
+  sleep(5);
+  printf("mike: I will change it to 1\n",set_cpu(1));
+  sleep(5);
+  printf("mike: Now my cpu is %d\n",get_cpu());
+  sleep(5);
   exit(0);
 }

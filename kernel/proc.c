@@ -939,6 +939,7 @@ procdump(void)
   printf("zombie size = %d\n",getPSsize(&ps_zombie));//maybe here also print the lists for sanity check
   printf("sleep size = %d\n",getPSsize(&ps_sleeping));//maybe here also print the lists for sanity check
   printf("runnable0 size = %d\n",getPSsize(&ps_runnable[0]));//maybe here also print the lists for sanity check
+   printf("runnable1 size = %d\n",getPSsize(&ps_runnable[1]));//maybe here also print the lists for sanity check
 }
 int
 set_cpu(int tocpu)
