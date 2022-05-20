@@ -95,3 +95,20 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_set_cpu(void)
+{
+  int cpp;
+
+  if(argint(0, &cpp) < 0)
+    return -1;
+  return set_cpu(cpp);
+}
+
+
+uint64
+sys_get_cpu(void)
+{
+  return get_cpu();
+}

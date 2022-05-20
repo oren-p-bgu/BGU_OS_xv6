@@ -952,9 +952,9 @@ set_cpu(int tocpu)
   newcpu = getCPUid_MIKE();
   return newcpu == tocpu ? newcpu : -1;
 }
-void
+int
 get_cpu(void)
 {
-  print("from proc : actual %d\nfrom proc: according to proc %d",getCPUid_MIKE(),myproc()->lastCpuRan);
+  printf("from proc : actual %d\nfrom proc: according to proc %d",getCPUid_MIKE(),myproc()->lastCpuRan);
   return myproc()->lastCpuRan;
 }
