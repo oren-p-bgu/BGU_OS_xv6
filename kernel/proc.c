@@ -6,9 +6,21 @@
 #include "proc.h"
 #include "defs.h"
 
+#define ENDLINK -1
+#define OUT_OF_LIST_LINK -2 //A proc that is not in a list shall have ni = -2
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
+//Explanation: Each proc here is a dummy, indicated by cpu = -1. 
+//IDEA #2: if you want to edit a list, you first lock the dummy.
+
+//Each cpu has its own runnable table.
+static struct proc ps_runnable[NCPU];
+
+static struct proc ps_sleeping;
+static struct proc ps_zombie;
+static struct proc ps_unused;
 
 struct proc *initproc;
 
@@ -20,6 +32,124 @@ static void freeproc(struct proc *p);
 
 extern uint64 cas(volatile void *addr, int expected, int newval);   // CAS Task 1
 
+//DOC: this function returns the specific ps size 
+int 
+getPSsize(struct proc *ps){
+  int size = 0;
+  struct proc *first = ps;
+  acquire(&first->lock);
+  for(;;){
+    if(ps->ni == ENDLINK){
+      release(&first->lock);
+      return size;
+    }
+    size++;
+    ps = &proc[ps->ni];
+  }
+}
+
+//MIKE : 
+//This function get the first non dummy proc and returns it locked!.
+
+struct proc*
+popFirstProc(struct proc *ps){
+  struct proc *chosen;
+  acquire(&ps->lock);
+  if(ps->ni == ENDLINK){
+    printf("No available proccess in list.");
+    return 0;
+  }
+  chosen = &proc[ps->ni];
+  acquire(&chosen->lock);
+  //DEBUG
+  //printf("%d",chosen->pid);
+  ps->ni = chosen->ni;
+  chosen->ni = OUT_OF_LIST_LINK;
+  release(&ps->lock);
+  return chosen;
+}
+
+
+//MIKE: nice trick to get the index :)
+int
+indxOfProc(struct proc *p){
+  return p-proc;
+}
+
+//p->lock must already be held!
+//It wont be released by this func
+void
+pushProcAtEnd(struct proc *ps, struct proc *p){
+  struct proc *last;
+  if(p->ni != OUT_OF_LIST_LINK){
+    panic("pushing an already pushed item to list!");
+  }
+  acquire(&ps->lock);
+  for(;;){
+    if(ps->ni == ENDLINK){// Found the last link, lets add the p here!
+      ps->ni = indxOfProc(p);//TODO : replace this function with the acutal phrase
+      p->ni = ENDLINK;
+      release(&ps->lock);
+      return;
+    }else{
+      last = ps;
+      ps = &proc[ps->ni];
+      //First lock the next one, then release the last.
+      acquire(&ps->lock);
+      release(&last->lock);
+    }
+  }
+}
+
+//p->lock must already be held!
+//It wont be released by this func
+//This function find the proc in the list and eliminates it, and fixes the list back 
+void
+removeProcFromList(struct proc *ps, struct proc *p){
+  //first, lock its next inline. then find its pred and lock it too!
+  struct proc *og = ps;
+  struct proc *last;
+  struct proc *next = proc;
+  int currentIndexOfProc = indxOfProc(p);
+  acquire(&ps->lock);
+
+  if(p->ni != ENDLINK){
+    next = &proc[p->ni];
+    acquire(&next->lock);
+  }
+
+  for(;;){
+    if(ps->ni == ENDLINK){
+      //DEBUG
+      if(og == &ps_sleeping){
+        printf("sleepingbug");
+      }
+      if(og == &ps_unused){
+        printf("unusedbug");
+      }
+      if(og == &ps_zombie){
+        printf("zombiebug");
+      }
+      printf(" %d ",indxOfProc(p));
+      panic("Could not find proc in list removeproc");
+    }
+    if(ps->ni == currentIndexOfProc){
+      ps->ni = p->ni;//last will point to my next.
+      release(&ps->lock);
+      break;
+    }
+    last = ps;
+    ps = &proc[ps->ni];
+    //First lock the next one, then release the last.
+    acquire(&ps->lock);
+    release(&last->lock);
+  }
+  if(p->ni != ENDLINK){
+    release(&next->lock);
+  }
+  p->ni = OUT_OF_LIST_LINK;//We just removed it, so we notify it about its removal 
+ 
+}
 extern char trampoline[]; // trampoline.S
 
 // helps ensure that wakeups of wait()ing
@@ -43,19 +173,51 @@ proc_mapstacks(pagetable_t kpgtbl) {
     kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
   }
 }
+//TODO: each time a proc changes its state, I need to reconsider 
+//using the list system
+//MIKE : I guess we should add changes here if we want to init the proc
 
 // initialize the proc table at boot time.
 void
 procinit(void)
 {
   struct proc *p;
-  
+  int cpu_indx = 0;
+  char* dummystring = "runnable_dummyx";//do not touch this handsome string
+  int nextProc = 0;//uses for the proc[] init UNUSED.
+
+  //Added them dummies
+  //first init the locks
+  //each CPU runnable list is here :
+  for(p = ps_runnable; p < &ps_runnable[NCPU]; p++) {
+    dummystring[14] = '0' + (cpu_indx++);//this is only for formatting the number
+    initlock(&p->lock, dummystring);
+    p->ni = ENDLINK;
+  }
+  initlock(&ps_sleeping.lock, "sleeping_dummy");
+  initlock(&ps_zombie.lock, "zombie_dummy");
+  initlock(&ps_unused.lock, "unused_dummy");
+  /*//Update the dummy (only debugging reasons) 
+  ps_runnable->cpuToRunOn = -2;
+  ps_sleeping->cpuToRunOn = -2;
+  ps_zombie->cpuToRunOn = -2;
+  ps_unused->cpuToRunOn = -2;*/
+
+  //Init the lists.
+  ps_sleeping.ni = ENDLINK;
+  ps_zombie.ni = ENDLINK;
+  ps_unused.ni = nextProc++;//special treatment
+
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->kstack = KSTACK((int) (p - proc));
+      p->ni = nextProc++;
   }
+  //fix last proc in the list: 
+  p = &proc[NPROC-1];
+  p->ni = ENDLINK;
 }
 
 // Must be called with interrupts disabled,
@@ -65,6 +227,17 @@ int
 cpuid()
 {
   int id = r_tp();
+  return id;
+}
+
+
+//MIKE: this is safer (using push thingies)
+int
+getCPUid_MIKE()
+{
+  push_off();
+  int id = r_tp();
+  pop_off();
   return id;
 }
 
@@ -112,8 +285,12 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
-
-  for(p = proc; p < &proc[NPROC]; p++) {
+  p = popFirstProc(&ps_unused);
+  if(p == 0){//No proc found
+    return 0;
+  }
+  goto found;
+  /*for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
     if(p->state == UNUSED) {
       goto found;
@@ -121,11 +298,12 @@ allocproc(void)
       release(&p->lock);
     }
   }
-  return 0;
+  return 0;*/
 
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->lastCpuRan = getCPUid_MIKE() + 1;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -171,6 +349,11 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  //MIKE: Cool idea! lets get this proc into the list!
+  //TODO : implement inserting a proc into end of list (here its unused)
+  //pushProcAtEnd(&ps_unused,)
+  p->lastCpuRan = 0;
+  pushProcAtEnd(&ps_unused,p);
 }
 
 // Create a user page table for a given process,
@@ -250,6 +433,8 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
+  pushProcAtEnd(&ps_runnable[p->lastCpuRan - 1],p);
+  //TODO : here you should assign it to a cpu
 
   release(&p->lock);
 }
@@ -282,12 +467,13 @@ fork(void)
   int i, pid;
   struct proc *np;
   struct proc *p = myproc();
-
+  //int p_cpuid = cpuid();//current cpu
+  //TODO : CHANGE THIS^ 
   // Allocate process.
   if((np = allocproc()) == 0){
     return -1;
   }
-
+  
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -320,6 +506,7 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+  pushProcAtEnd(&ps_runnable[p->lastCpuRan - 1],np);
   release(&np->lock);
 
   return pid;
@@ -377,6 +564,8 @@ exit(int status)
 
   p->xstate = status;
   p->state = ZOMBIE;
+  //MIKE:
+  pushProcAtEnd(&ps_zombie,p);
 
   release(&wait_lock);
 
@@ -414,6 +603,7 @@ wait(uint64 addr)
             release(&wait_lock);
             return -1;
           }
+          removeProcFromList(&ps_zombie,np);
           freeproc(np);
           release(&np->lock);
           release(&wait_lock);
@@ -446,18 +636,46 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-  
+  int currentcpu = getCPUid_MIKE();
+  struct proc *myps = &ps_runnable[currentcpu];
+  //int cpu_id = 0;//FIX HERE
   c->proc = 0;
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
+    
+    //check if list is empty
+    //else: pick a process and lock it and fix the list and unlock the list
+    //run the process 
+    acquire(&myps->lock);
+    if(myps->ni == ENDLINK){//No proccesses to run for me!
+      release(&myps->lock);
+      continue;
+    }
+    p = &proc[myps->ni];
+    acquire(&p->lock);
+    myps->ni = p->ni;
+    p->ni = OUT_OF_LIST_LINK;
+    release(&myps->lock);
+    // Switch to chosen process.  It is the process's job
+    // to release its lock and then reacquire it
+    // before jumping back to us.
+    p->state = RUNNING;
+    c->proc = p;
+    swtch(&c->context, &p->context);
 
-    for(p = proc; p < &proc[NPROC]; p++) {
+    // Process is done running for now.
+    // It should have changed its p->state before coming back.
+    c->proc = 0;
+    release(&p->lock);
+
+    /*for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
+        removeProcFromList(&ps_runnable[0],p);
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
@@ -467,7 +685,7 @@ scheduler(void)
         c->proc = 0;
       }
       release(&p->lock);
-    }
+    }*/
   }
 }
 
@@ -505,6 +723,7 @@ yield(void)
   struct proc *p = myproc();
   acquire(&p->lock);
   p->state = RUNNABLE;
+  pushProcAtEnd(&ps_runnable[p->lastCpuRan - 1],p);//TODO: to runnable
   sched();
   release(&p->lock);
 }
@@ -550,6 +769,14 @@ sleep(void *chan, struct spinlock *lk)
   // Go to sleep.
   p->chan = chan;
   p->state = SLEEPING;
+  //PushProcAtStart:
+  if(p->ni != OUT_OF_LIST_LINK){
+    panic("pushing an already pushed item to list!");
+  }
+  acquire(&ps_sleeping.lock);
+  p->ni = ps_sleeping.ni;
+  ps_sleeping.ni = indxOfProc(p);
+  release(&ps_sleeping.lock);
 
   sched();
 
@@ -567,16 +794,60 @@ void
 wakeup(void *chan)
 {
   struct proc *p;
-
-  for(p = proc; p < &proc[NPROC]; p++) {
+  //CUSTOM CODE:
+  struct proc *itr = &ps_sleeping;
+  struct proc *last = itr;//for unlocking the last one after locking the current
+  struct proc *cpulist_helper = ps_runnable;//do not worry, this is junk.
+  int procindx = -1;
+  acquire(&itr->lock);
+  if(itr->ni == -1){
+    printf("%d/%d",getCPUid_MIKE(),NCPU);
+    release(&itr->lock);
+    return;
+  }
+  for(;;){
+    procindx = itr->ni;
+    p = &proc[procindx];
+    acquire(&p->lock);
+    if(p->state == SLEEPING && p->chan == chan) {
+      itr->ni = p->ni;//last will point to my next.
+      p->ni = OUT_OF_LIST_LINK;
+      p->state = RUNNABLE;
+      //Special case of running on a list whilst running on a list!
+      //we would put the item in the first place then!
+      cpulist_helper = &ps_runnable[p->lastCpuRan - 1];
+      //PushProcAtStart:
+      if(p->ni != OUT_OF_LIST_LINK){
+        panic("pushing an already pushed item to list!");
+      }
+      acquire(&cpulist_helper->lock);
+      p->ni = cpulist_helper->ni;
+      cpulist_helper->ni = procindx;
+      release(&cpulist_helper->lock);
+    }
+    release(&p->lock);
+    if(itr->ni == -1){
+      release(&itr->lock);
+      return;
+    }
+    last = itr;
+    itr = &proc[itr->ni];
+    //First lock the next one, then release the last.
+    acquire(&itr->lock);
+    release(&last->lock);
+  }
+  //OLD :
+  /*for(p = proc; p < &proc[NPROC]; p++) {
     if(p != myproc()){
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
+        removeProcFromList(&ps_sleeping, p);
         p->state = RUNNABLE;
+        pushProcAtEnd(&ps_runnable[p->lastCpuRan - 1],p);//FIX PLS
       }
       release(&p->lock);
     }
-  }
+  }*/
 }
 
 // Kill the process with the given pid.
@@ -593,7 +864,9 @@ kill(int pid)
       p->killed = 1;
       if(p->state == SLEEPING){
         // Wake process from sleep().
+        removeProcFromList(&ps_sleeping, p);
         p->state = RUNNABLE;
+        pushProcAtEnd(&ps_runnable[p->lastCpuRan - 1],p);
       }
       release(&p->lock);
       return 0;
@@ -633,6 +906,8 @@ either_copyin(void *dst, int user_src, uint64 src, uint64 len)
   }
 }
 
+
+
 // Print a process listing to console.  For debugging.
 // Runs when user types ^P on console.
 // No lock to avoid wedging a stuck machine further.
@@ -649,7 +924,7 @@ procdump(void)
   struct proc *p;
   char *state;
 
-  printf("\n");
+  printf("\n\n\n");
   for(p = proc; p < &proc[NPROC]; p++){
     if(p->state == UNUSED)
       continue;
@@ -657,7 +932,26 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    printf("%d %s %s", p->pid, state, p->name);
+    printf("%d %s %s cpu %d", p->pid, state, p->name, p->lastCpuRan-1);
     printf("\n");
   }
+  printf("unused.ni = %d\n",ps_unused.ni);//maybe here also print the lists for sanity check
+  printf("unused size = %d\n",getPSsize(&ps_unused));//maybe here also print the lists for sanity check
+  printf("zombie size = %d\n",getPSsize(&ps_zombie));//maybe here also print the lists for sanity check
+  printf("sleep size = %d\n",getPSsize(&ps_sleeping));//maybe here also print the lists for sanity check
+  printf("runnable0 size = %d\n",getPSsize(&ps_runnable[0]));//maybe here also print the lists for sanity check
+}
+int
+set_cpu(int tocpu)
+{
+  struct proc *p;
+  yield();
+  return getCPUid_MIKE();
+  return -1;
+}
+void
+get_cpu(void)
+{
+  print("from proc : actual %d\nfrom proc: according to proc %d",getCPUid_MIKE(),myproc()->lastCpuRan);
+  return myproc()->lastCpuRan;
 }

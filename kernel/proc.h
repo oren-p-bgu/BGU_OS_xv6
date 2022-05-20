@@ -25,7 +25,6 @@ struct cpu {
   int noff;                   // Depth of push_off() nesting.
   int intena;                 // Were interrupts enabled before push_off()?
 };
-
 extern struct cpu cpus[NCPU];
 
 // per-process data for the trap handling code in trampoline.S.
@@ -105,4 +104,8 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  int ni; //LinkedList nextIndex in procs[]. -1 if this is last item. -2 if the list is running in some cpu.
+  int lastCpuRan;// This one is a little more complicated.. 0 if unknown, else its value -1 is the actual index
+  //lastcpuran should be changed whenever allocproc is acting
+  //lastCpuRan should only be changed by a stealer, fork and init (freeproc also by setting to 0)
 };
