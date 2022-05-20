@@ -73,7 +73,7 @@ popFirstProc(struct proc *ps){
 //MIKE: nice trick to get the index :)
 int
 indxOfProc(struct proc *p){
-  return p-proc;
+  return p - proc;
 }
 
 //p->lock must already be held!
@@ -801,7 +801,6 @@ wakeup(void *chan)
   int procindx = -1;
   acquire(&itr->lock);
   if(itr->ni == -1){
-    printf("%d/%d",getCPUid_MIKE(),NCPU);
     release(&itr->lock);
     return;
   }
@@ -944,10 +943,14 @@ procdump(void)
 int
 set_cpu(int tocpu)
 {
-  struct proc *p;
+  struct proc *p = myproc();
+  int newcpu = -1;
+  acquire(&p->lock);
+  p->lastCpuRan = tocpu+1;//fix the offset (see documentation in proc.h)
+  release(&p->lock);
   yield();
-  return getCPUid_MIKE();
-  return -1;
+  newcpu = getCPUid_MIKE();
+  return newcpu == tocpu ? newcpu : -1;
 }
 void
 get_cpu(void)
