@@ -8,7 +8,7 @@
 
 #define ENDLINK -1
 #define OUT_OF_LIST_LINK -2 //A proc that is not in a list shall have ni = -2
-#define ASSIGNMENT4 1
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -263,6 +263,7 @@ proc_mapstacks(pagetable_t kpgtbl) {
 void
 procinit(void)
 {
+  
   struct proc *p;
   struct cpu  *c;
   int i = 0;
@@ -273,23 +274,17 @@ procinit(void)
   //Added them dummies
   //first init the locks
   //each CPU runnable list is here :
-  for(p = ps_runnable; p < &ps_runnable[NCPU]; p++,i++) {
-    dummystring[14] = '0' + (cpu_indx++);//this is only for formatting the number
+  for(p = ps_runnable; p < &ps_runnable[CPUS]; p++,i++) {
+    dummystring[0] = '0' + (cpu_indx++);//this is only for formatting the number
     initlock(&p->lock, dummystring);
     p->ni = ENDLINK;
     p->state = RUNNABLE;
     c = &cpus[i];
-    if(cas(&c->counteryay, 0, 1)){
+    /*if(cas(&c->counteryay, 0, 1)){
       panic("cas failed at proc init!!!");
-    }
-    c->counteryay = 5;
+    }*/
+    c->counteryay = 0;
   }
-  c = &cpus[0];
-  int neee = 10;
-  //int old = 10;
-  do{
-    neee -=1;
-  }while(cas(&c->counteryay, neee,neee+8));
   initlock(&ps_sleeping.lock, "sleeping_dummy");
   initlock(&ps_zombie.lock, "zombie_dummy");
   initlock(&ps_unused.lock, "unused_dummy");
@@ -640,12 +635,10 @@ getLowCpu(){
   struct cpu *c;
   int i;
 
-  for(i = 1; i < NCPU; i++){
-    c = &cpus[NCPU];
-    do{
-      currentval = c->counteryay;
-    }while(cas(&c->counteryay,currentval,currentval));
-    if(currentval < val){
+  for(i = 0; i < CPUS; i++){
+    c = &cpus[0];
+    currentval = c->counteryay;
+    if(currentval <= val){
       indx = i;
       val = currentval;
     }
@@ -660,8 +653,8 @@ void
 printCpuVals(){
   struct cpu *c;
   int i;
-  for(i = 0; i < NCPU; i++){
-    c = &cpus[NCPU];
+  for(i = 0; i < CPUS; i++){
+    c = &cpus[i];
     printf("%d %d\n",i,c->counteryay);
   }
   printf("lastcpu : %d\n",lastcpuuu);
@@ -717,16 +710,15 @@ fork(void)
   np->state = RUNNABLE;
   #if ASSIGNMENT4 == 1
       lastCpuRan = getLowCpu();
-      p->lastCpuRan = lastCpuRan;
+      np->lastCpuRan = lastCpuRan;
   #else
-  lastCpuRan = p->lastCpuRan;
+  lastCpuRan = np->lastCpuRan;
   #endif
   pushProcAtStart(&ps_runnable[lastCpuRan],np);
   while(cas(&cpus[lastCpuRan].counteryay, numOfProc, numOfProc+1)){
       numOfProc ++;
   } 
   release(&np->lock);
-
   return pid;
 }
 
@@ -858,7 +850,7 @@ scheduler(void)
 {
   struct proc *p;
   //struct proc *tosteal;
-  int stolenindx = -1;
+  //int stolenindx = -1;
   //int i;
   struct cpu *c = mycpu();
   int currentcpu = getCPUid_MIKE();
@@ -877,33 +869,38 @@ scheduler(void)
     acquire(&myps->lock);
     if(myps->ni <= ENDLINK){//No proccesses to run for me!
       release(&myps->lock);
+      continue;
       //steal 
-      /*for(i = 0,tosteal = ps_runnable;tosteal<&ps_runnable[NCPU];i++,tosteal++){
+      /*for(i = 0;i<CPUS;i++){
+        tosteal = &ps_runnable[i];
         if(i != currentcpu){
             acquire(&tosteal->lock);
-            do{
-              stolenindx = tosteal->ni;
-              if(stolenindx == -1){
-                break;//no steal!
-              }
-              p = &proc[stolenindx];
-              acquire(&p->lock);   
-            }while(cas(&tosteal->ni,stolenindx,p->ni));
-            release(&tosteal->lock);
-            if(stolenindx != -1){
-              //printf("STEAL %d %d\n",i, currentcpu);   
-              p->lastCpuRan = currentcpu;     
-              break;
+            stolenindx = tosteal->ni;
+            if(stolenindx == -1){
+              release(&tosteal->lock);
+              continue;;//no steal!
             }
+            p = &proc[stolenindx];
+            acquire(&p->lock);  
+            if(p->ni == OUT_OF_LIST_LINK || p->state == RUNNING){
+              //ABORT STEALING!
+              release(&p->lock);  
+              release(&tosteal->lock);
+              continue;;//no steal!
+            } 
+            tosteal->ni = p->ni;
+            release(&tosteal->lock);
+            p->lastCpuRan = currentcpu;   
+            //printf("STEAL %d %d\n",i, currentcpu); 
+            break; 
         }
       }*/
-      if(stolenindx == -1){
-        continue;
-      }
-    }else{
-      acquire(&(p = &proc[myps->ni])->lock);
-      myps->ni = p->ni;
-      release(&myps->lock);
+    }
+    acquire(&(p = &proc[myps->ni])->lock);
+    myps->ni = p->ni;
+    release(&myps->lock);
+    if(p->state != RUNNABLE){
+      panic("OH NONRUNNABLE ");
     }
     p->ni = OUT_OF_LIST_LINK;
     // Switch to chosen process.  It is the process's job
@@ -1260,7 +1257,7 @@ kill(int pid)
     return 0;
   }
   else{
-    for(runnablelist = ps_runnable; runnablelist < &ps_runnable[NCPU]; runnablelist++){
+    for(runnablelist = ps_runnable; runnablelist < &ps_runnable[CPUS]; runnablelist++){
       if((p = search_bypid(runnablelist,pid)) != 0){
         p->killed = 1;
         release(&p->lock);
@@ -1329,8 +1326,8 @@ procdump(void)
     printf("%d %s %s cpu %d", p->pid, state, p->name, p->lastCpuRan);
     printf("\n");
   }
-  //printf("cpu vals:\n");
-  //printCpuVals();
+  printf("cpu vals:\n");
+  printCpuVals();
   //printf("unused.ni = %d\n",ps_unused.ni);//maybe here also print the lists for sanity check
   //printf("unused size = %d\n",getPSsize(&ps_unused));//maybe here also print the lists for sanity check
   //printf("zombie size = %d\n",getPSsize(&ps_zombie));//maybe here also print the lists for sanity check
@@ -1357,7 +1354,7 @@ get_cpu(void)
   return myproc()->lastCpuRan;
 }
 int cpu_process_count(int cpu_num){
-  if(cpu_num >= NCPU){
+  if(cpu_num >= CPUS){
     printf("cpu_process_count: Out of bounds");
     return -1;
   }

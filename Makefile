@@ -158,6 +158,14 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 ifndef CPUS
 CPUS := 3
 endif
+CFLAGS += -Dnumcpus=$(CPUS)
+ifdef BLNCFLG
+CFLAGS += -Dbob=$(BLNCFLG)
+endif
+#define ASSIGNMENT4 1
+
+
+
 
 QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic
 QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0

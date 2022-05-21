@@ -7,12 +7,31 @@
 int
 main(void)
 {
-  printf("mike: I know my cpu is %d\n",get_cpu());
-  sleep(5);
-  printf("mike: I will change it to 1\n",set_cpu(1));
-  sleep(5);
-  printf("mike: Now my cpu is %d\n",get_cpu());
-  printf("mike: cpu0count %d\n",cpu_process_count(0));
-  sleep(5);
+  for(int i = 0; i < 1; i++){
+    int pid1 = fork();
+    if(pid1 < 0){
+      printf("%d: fork failed\n", i);
+      exit(1);
+    }
+    if(pid1 == 0){
+      sleep(10);
+      while(1) {
+        //printf("%d",getpid());
+        getpid();
+      }
+      exit(0);
+    }else{
+      //sleep(1);
+      if(kill(4) == -1){
+        printf("Oh no..");
+      }
+    }
+    /*kill(pid1);
+    wait(&xst);
+    if(xst != -1) {
+       printf("%s: status should be -1\n", s);
+       exit(1);
+    }*/
+  }
   exit(0);
 }
