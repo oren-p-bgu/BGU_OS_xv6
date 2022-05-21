@@ -8,7 +8,7 @@
 
 #define ENDLINK -1
 #define OUT_OF_LIST_LINK -2 //A proc that is not in a list shall have ni = -2
-
+#define ASSIGNMENT4 1
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -265,6 +265,7 @@ procinit(void)
 {
   struct proc *p;
   struct cpu  *c;
+  int i = 0;
   int cpu_indx = 0;
   char* dummystring = "runnable_dummyx";//do not touch this handsome string
   int nextProc = 0;//uses for the proc[] init UNUSED.
@@ -272,15 +273,23 @@ procinit(void)
   //Added them dummies
   //first init the locks
   //each CPU runnable list is here :
-  for(p = ps_runnable, c = cpus; p < &ps_runnable[NCPU]; p++,c++) {
+  for(p = ps_runnable; p < &ps_runnable[NCPU]; p++,i++) {
     dummystring[14] = '0' + (cpu_indx++);//this is only for formatting the number
     initlock(&p->lock, dummystring);
     p->ni = ENDLINK;
     p->state = RUNNABLE;
-    if(cas(&c->counteryay, 0, 0)){
+    c = &cpus[i];
+    if(cas(&c->counteryay, 0, 1)){
       panic("cas failed at proc init!!!");
     }
+    c->counteryay = 5;
   }
+  c = &cpus[0];
+  int neee = 10;
+  //int old = 10;
+  do{
+    neee -=1;
+  }while(cas(&c->counteryay, neee,neee+8));
   initlock(&ps_sleeping.lock, "sleeping_dummy");
   initlock(&ps_zombie.lock, "zombie_dummy");
   initlock(&ps_unused.lock, "unused_dummy");
@@ -573,7 +582,7 @@ uchar initcode[] = {
 void
 userinit(void)
 {
-  int numOfProc;
+  uint64 numOfProc;
   int lastCpuRan;
   struct proc *p;
 
@@ -622,13 +631,47 @@ growproc(int n)
   p->sz = sz;
   return 0;
 }
+static int lastcpuuu = 0;
+int 
+getLowCpu(){
+  uint64 val = -1;
+  uint64 currentval = 0;
+  int indx = 0;
+  struct cpu *c;
+  int i;
 
+  for(i = 1; i < NCPU; i++){
+    c = &cpus[NCPU];
+    do{
+      currentval = c->counteryay;
+    }while(cas(&c->counteryay,currentval,currentval));
+    if(currentval < val){
+      indx = i;
+      val = currentval;
+    }
+  }
+  if(lastcpuuu != indx){
+    //printf("<---%d--->",indx);
+  }
+  lastcpuuu = indx;
+  return indx;
+}
+void 
+printCpuVals(){
+  struct cpu *c;
+  int i;
+  for(i = 0; i < NCPU; i++){
+    c = &cpus[NCPU];
+    printf("%d %d\n",i,c->counteryay);
+  }
+  printf("lastcpu : %d\n",lastcpuuu);
+}
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
 int
 fork(void)
 {
-  int numOfProc;
+  uint64 numOfProc = 0;
   int lastCpuRan;
   int i, pid;
   struct proc *np;
@@ -672,11 +715,16 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+  #if ASSIGNMENT4 == 1
+      lastCpuRan = getLowCpu();
+      p->lastCpuRan = lastCpuRan;
+  #else
   lastCpuRan = p->lastCpuRan;
+  #endif
   pushProcAtStart(&ps_runnable[lastCpuRan],np);
-  do{
-      numOfProc = cpus[lastCpuRan].counteryay;
-  } while(cas(&cpus[lastCpuRan].counteryay, numOfProc, numOfProc+1));
+  while(cas(&cpus[lastCpuRan].counteryay, numOfProc, numOfProc+1)){
+      numOfProc ++;
+  } 
   release(&np->lock);
 
   return pid;
@@ -809,35 +857,62 @@ void
 scheduler(void)
 {
   struct proc *p;
+  struct proc *tosteal;
+  int stolenindx = -1;
+  int i;
   struct cpu *c = mycpu();
   int currentcpu = getCPUid_MIKE();
   struct proc *myps = &ps_runnable[currentcpu];
-  int numOfProc;
+  //int numOfProc;
   //int cpu_id = 0;//FIX HERE
   c->proc = 0;
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
-    
+    currentcpu = getCPUid_MIKE();
+    myps = &ps_runnable[currentcpu];
     //check if list is empty
     //else: pick a process and lock it and fix the list and unlock the list
     //run the process 
     acquire(&myps->lock);
     if(myps->ni <= ENDLINK){//No proccesses to run for me!
       release(&myps->lock);
-      continue;
+      //steal 
+      for(i = 0,tosteal = ps_runnable;tosteal<&ps_runnable[NCPU];i++,tosteal++){
+        if(i != currentcpu){
+            acquire(&tosteal->lock);
+            do{
+              stolenindx = tosteal->ni;
+              if(stolenindx == -1){
+                break;//no steal!
+              }
+              p = &proc[stolenindx];
+              acquire(&p->lock);   
+            }while(cas(&tosteal->ni,stolenindx,p->ni));
+            release(&tosteal->lock);
+            if(stolenindx != -1){
+              //printf("STEAL %d %d\n",i, currentcpu);   
+              p->lastCpuRan = currentcpu;     
+              break;
+            }
+        }
+      }
+      if(stolenindx == -1){
+        continue;
+      }
+    }else{
+      acquire(&(p = &proc[myps->ni])->lock);
+      myps->ni = p->ni;
+      release(&myps->lock);
     }
-    acquire(&(p = &proc[myps->ni])->lock);
-    myps->ni = p->ni;
-    release(&myps->lock);
     p->ni = OUT_OF_LIST_LINK;
     // Switch to chosen process.  It is the process's job
     // to release its lock and then reacquire it
     // before jumping back to us.
     p->state = RUNNING;
-    do{
+    /*do{
       numOfProc = cpus[currentcpu].counteryay;
-    } while(cas(&cpus[currentcpu].counteryay, numOfProc, numOfProc+1));
+    } while(cas(&(cpus[currentcpu].counteryay), numOfProc, numOfProc-1));*/
     c->proc = p;
     swtch(&c->context, &p->context);
 
@@ -899,16 +974,12 @@ sched(void)
 void
 yield(void)
 {
-  int numOfProc;
   int lastCpuRan;
   struct proc *p = myproc();
   acquire(&p->lock);
   p->state = RUNNABLE;
   lastCpuRan = p->lastCpuRan;
   pushProcAtEnd(&ps_runnable[lastCpuRan],p);//TODO: to runnable
-   do{
-      numOfProc = cpus[lastCpuRan].counteryay;
-  } while(cas(&cpus[lastCpuRan].counteryay, numOfProc, numOfProc+1));
   sched();
   release(&p->lock);
 }
@@ -979,7 +1050,7 @@ sleep(void *chan, struct spinlock *lk)
 void
 wakeup(void *chan)
 {
-  int numOfProc,lastCpuRan;
+  uint64 numOfProc = 0,lastCpuRan;
   struct proc *helper_cpuready;
   struct proc *pred,*curr;
   pred = &ps_sleeping;
@@ -996,16 +1067,21 @@ wakeup(void *chan)
     }
     if(curr->chan == chan){
       pred->ni = curr->ni;
+      #if ASSIGNMENT4 == 1
+      lastCpuRan = getLowCpu();
+      curr->lastCpuRan = lastCpuRan;
+      #else
       lastCpuRan = curr->lastCpuRan;
+      #endif
       acquire(&(helper_cpuready = &ps_runnable[lastCpuRan])->lock);//very funny line, i like it!
       curr->ni = helper_cpuready->ni;
       helper_cpuready->ni = indxOfProc(curr);
       curr->state = RUNNABLE;
       release(&curr->lock);
       release(&helper_cpuready->lock);
-      do{
-          numOfProc = cpus[lastCpuRan].counteryay;
-      } while(cas(&cpus[lastCpuRan].counteryay, numOfProc, numOfProc+1));
+      while(cas(&cpus[lastCpuRan].counteryay, numOfProc, numOfProc+1)){
+          numOfProc ++;
+      } 
       if(pred->ni == ENDLINK){//finished for today
         release(&pred->lock);
         return;
@@ -1243,7 +1319,6 @@ procdump(void)
   struct proc *p;
   char *state;
 
-  printf("\n\n\n");
   for(p = proc; p < &proc[NPROC]; p++){
     if(p->state == UNUSED)
       continue;
@@ -1254,6 +1329,8 @@ procdump(void)
     printf("%d %s %s cpu %d", p->pid, state, p->name, p->lastCpuRan);
     printf("\n");
   }
+  printf("cpu vals:\n");
+  printCpuVals();
   printf("unused.ni = %d\n",ps_unused.ni);//maybe here also print the lists for sanity check
   printf("unused size = %d\n",getPSsize(&ps_unused));//maybe here also print the lists for sanity check
   printf("zombie size = %d\n",getPSsize(&ps_zombie));//maybe here also print the lists for sanity check
@@ -1278,4 +1355,11 @@ get_cpu(void)
 {
   printf("from proc : actual %d\nfrom proc: according to proc %d\n",getCPUid_MIKE(),myproc()->lastCpuRan);
   return myproc()->lastCpuRan;
+}
+int cpu_process_count(int cpu_num){
+  if(cpu_num >= NCPU){
+    printf("cpu_process_count: Out of bounds");
+    return -1;
+  }
+  return cpus[cpu_num].counteryay;
 }

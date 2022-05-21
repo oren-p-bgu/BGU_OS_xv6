@@ -12,6 +12,7 @@ main(void)
   printf("mike: I will change it to 1\n",set_cpu(1));
   sleep(5);
   printf("mike: Now my cpu is %d\n",get_cpu());
+  printf("mike: cpu0count %d\n",cpu_process_count(0));
   sleep(5);
   exit(0);
 }

@@ -112,3 +112,12 @@ sys_get_cpu(void)
 {
   return get_cpu();
 }
+uint64
+sys_cpu_process_count(void)
+{
+  int cpp;
+
+  if(argint(0, &cpp) < 0)
+    return -1;
+  return cpu_process_count(cpp);
+}
