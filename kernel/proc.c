@@ -857,9 +857,9 @@ void
 scheduler(void)
 {
   struct proc *p;
-  struct proc *tosteal;
+  //struct proc *tosteal;
   int stolenindx = -1;
-  int i;
+  //int i;
   struct cpu *c = mycpu();
   int currentcpu = getCPUid_MIKE();
   struct proc *myps = &ps_runnable[currentcpu];
@@ -878,7 +878,7 @@ scheduler(void)
     if(myps->ni <= ENDLINK){//No proccesses to run for me!
       release(&myps->lock);
       //steal 
-      for(i = 0,tosteal = ps_runnable;tosteal<&ps_runnable[NCPU];i++,tosteal++){
+      /*for(i = 0,tosteal = ps_runnable;tosteal<&ps_runnable[NCPU];i++,tosteal++){
         if(i != currentcpu){
             acquire(&tosteal->lock);
             do{
@@ -896,7 +896,7 @@ scheduler(void)
               break;
             }
         }
-      }
+      }*/
       if(stolenindx == -1){
         continue;
       }
@@ -1329,14 +1329,14 @@ procdump(void)
     printf("%d %s %s cpu %d", p->pid, state, p->name, p->lastCpuRan);
     printf("\n");
   }
-  printf("cpu vals:\n");
-  printCpuVals();
-  printf("unused.ni = %d\n",ps_unused.ni);//maybe here also print the lists for sanity check
-  printf("unused size = %d\n",getPSsize(&ps_unused));//maybe here also print the lists for sanity check
-  printf("zombie size = %d\n",getPSsize(&ps_zombie));//maybe here also print the lists for sanity check
-  printf("sleep size = %d\n",getPSsize(&ps_sleeping));//maybe here also print the lists for sanity check
-  printf("runnable0 size = %d\n",getPSsize(&ps_runnable[0]));//maybe here also print the lists for sanity check
-   printf("runnable1 size = %d\n",getPSsize(&ps_runnable[1]));//maybe here also print the lists for sanity check
+  //printf("cpu vals:\n");
+  //printCpuVals();
+  //printf("unused.ni = %d\n",ps_unused.ni);//maybe here also print the lists for sanity check
+  //printf("unused size = %d\n",getPSsize(&ps_unused));//maybe here also print the lists for sanity check
+  //printf("zombie size = %d\n",getPSsize(&ps_zombie));//maybe here also print the lists for sanity check
+  //printf("sleep size = %d\n",getPSsize(&ps_sleeping));//maybe here also print the lists for sanity check
+  //printf("runnable0 size = %d\n",getPSsize(&ps_runnable[0]));//maybe here also print the lists for sanity check
+   //printf("runnable1 size = %d\n",getPSsize(&ps_runnable[1]));//maybe here also print the lists for sanity check
 }
 int
 set_cpu(int tocpu)
