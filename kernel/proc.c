@@ -115,6 +115,8 @@ popFirstProc(struct proc *ps){
 void
 pushProcAtStart(struct proc *ps, struct proc *p){
   if(p->ni != OUT_OF_LIST_LINK){
+    printf("lastrun = %d , tried to pull from %d",p->lastCpuRan,ps-ps_runnable);
+    
     panic("start: pushing an already pushed item to list!");
   }
   acquire(&ps->lock);
@@ -264,6 +266,9 @@ void
 procinit(void)
 {
   
+  #if ASSIGNMENT4 == 1
+  printf("Genuis!!");
+  #endif
   struct proc *p;
   struct cpu  *c;
   int i = 0;
@@ -434,7 +439,7 @@ found:
 
   return p;
 }
-
+//p->lock is preheld
 int remove_bypred(struct proc *ps,struct proc *p){
   struct proc *pred,*curr;
   int found = 0;
@@ -507,8 +512,20 @@ freeproc(struct proc *p)
       p->ni = OUT_OF_LIST_LINK;
       //printf("\n\n\n+\n\n\n");
     }else{
+      printf("PROC IS IN CPU?");
+      for(int i = 0;i<CPUS;i++){
+          if(remove_bypred(&ps_runnable[i],p)){
+              p->ni = OUT_OF_LIST_LINK;
+              printf("freeproc from cpu!!!");
+              break;
+          }
+      }
+      
       //printf("free:%s",states[p->state]);
       
+    }
+    if(p->ni!=OUT_OF_LIST_LINK){
+        printf("Proc Not FOUND!!!");
     }
     p->pid = 0;
     p->lastCpuRan = 0;
@@ -636,7 +653,7 @@ getLowCpu(){
   int i;
 
   for(i = 0; i < CPUS; i++){
-    c = &cpus[0];
+    c = &cpus[i];
     currentval = c->counteryay;
     if(currentval <= val){
       indx = i;
@@ -1231,39 +1248,35 @@ struct proc *search_bypid(struct proc *ps,int pid){
   release(&pred->lock);
   return 0;
 }
+
 // Kill the process with the given pid.
 // The victim won't exit until it tries to return
 // to user space (see usertrap() in trap.c).
 int
 kill(int pid)
 {
-  int numOfProc,lastCpuRan;
-  struct proc *runnablelist;
-  struct proc *cpuhelper;
   struct proc *p;
-  if((p = removeSearching_bypid(&ps_sleeping,pid)) != 0){
-    p->killed = 1;
-    p->state = RUNNABLE;
-    lastCpuRan = p->lastCpuRan;
-    cpuhelper = &ps_runnable[lastCpuRan];
-    acquire(&cpuhelper->lock);
-    p->ni = cpuhelper->ni;
-    cpuhelper->ni = indxOfProc(p);
-    release(&p->lock);
-    release(&cpuhelper->lock);
-    do{
-        numOfProc = cpus[lastCpuRan].counteryay;
-    } while(cas(&cpus[lastCpuRan].counteryay, numOfProc, numOfProc+1));
-    return 0;
-  }
-  else{
-    for(runnablelist = ps_runnable; runnablelist < &ps_runnable[CPUS]; runnablelist++){
-      if((p = search_bypid(runnablelist,pid)) != 0){
-        p->killed = 1;
-        release(&p->lock);
-        break;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->pid == pid){
+      p->killed = 1;
+      if(p->state == SLEEPING){
+        if(!remove_bypred(&ps_sleeping,p)){
+          panic("SOMEONE WOKE UP!!");
+        }
+        p->ni = OUT_OF_LIST_LINK;
+        // Wake process from sleep().
+        p->state = RUNNABLE;
+        printf("<");
+        pushProcAtStart(&ps_runnable[p->lastCpuRan],p);
+
+        printf(">");
       }
+      release(&p->lock);
+      return 0;
     }
+    release(&p->lock);
   }
   return -1;
 }
