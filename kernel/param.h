@@ -12,11 +12,8 @@
 #define FSSIZE       1000  // size of file system in blocks
 #define MAXPATH      128   // maximum file path name
 
-#ifdef bob
-#define ASSIGNMENT4 1
-#else
-#define ASSIGNMENT4 0
-#endif
+
+#define ASSIGNMENT4 bob
 
 #ifdef numcpus
 #define CPUS numcpus

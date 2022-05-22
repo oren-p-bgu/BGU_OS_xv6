@@ -266,9 +266,6 @@ void
 procinit(void)
 {
   
-  #if ASSIGNMENT4 == 1
-  printf("Genuis!!");
-  #endif
   struct proc *p;
   struct cpu  *c;
   int i = 0;
@@ -512,14 +509,14 @@ freeproc(struct proc *p)
       p->ni = OUT_OF_LIST_LINK;
       //printf("\n\n\n+\n\n\n");
     }else{
-      printf("PROC IS IN CPU?");
+      /*printf("PROC IS IN CPU?");
       for(int i = 0;i<CPUS;i++){
           if(remove_bypred(&ps_runnable[i],p)){
               p->ni = OUT_OF_LIST_LINK;
               printf("freeproc from cpu!!!");
               break;
           }
-      }
+      }*/
       
       //printf("free:%s",states[p->state]);
       
@@ -865,10 +862,13 @@ wait(uint64 addr)
 void
 scheduler(void)
 {
-  struct proc *p;
-  //struct proc *tosteal;
-  //int stolenindx = -1;
-  //int i;
+  struct proc *p = proc;
+  #if ASSIGNMENT4 == 1
+  struct proc *tosteal;
+      int stolenindx = -1;
+      int i;
+  #endif
+  
   struct cpu *c = mycpu();
   int currentcpu = getCPUid_MIKE();
   struct proc *myps = &ps_runnable[currentcpu];
@@ -886,9 +886,12 @@ scheduler(void)
     acquire(&myps->lock);
     if(myps->ni <= ENDLINK){//No proccesses to run for me!
       release(&myps->lock);
-      continue;
+      
+      
+      #if ASSIGNMENT4 == 1
+      
       //steal 
-      /*for(i = 0;i<CPUS;i++){
+      for(i = 0;i<CPUS;i++){
         tosteal = &ps_runnable[i];
         if(i != currentcpu){
             acquire(&tosteal->lock);
@@ -903,6 +906,7 @@ scheduler(void)
               //ABORT STEALING!
               release(&p->lock);  
               release(&tosteal->lock);
+    stolenindx = -1;
               continue;;//no steal!
             } 
             tosteal->ni = p->ni;
@@ -911,11 +915,18 @@ scheduler(void)
             //printf("STEAL %d %d\n",i, currentcpu); 
             break; 
         }
-      }*/
+      }
+      if(stolenindx == -1){
+        continue;
+      }
+      #else
+      continue;
+      #endif
+    }else{
+      acquire(&(p = &proc[myps->ni])->lock);
+      myps->ni = p->ni;
+      release(&myps->lock);
     }
-    acquire(&(p = &proc[myps->ni])->lock);
-    myps->ni = p->ni;
-    release(&myps->lock);
     if(p->state != RUNNABLE){
       panic("OH NONRUNNABLE ");
     }
@@ -1268,10 +1279,7 @@ kill(int pid)
         p->ni = OUT_OF_LIST_LINK;
         // Wake process from sleep().
         p->state = RUNNABLE;
-        printf("<");
         pushProcAtStart(&ps_runnable[p->lastCpuRan],p);
-
-        printf(">");
       }
       release(&p->lock);
       return 0;

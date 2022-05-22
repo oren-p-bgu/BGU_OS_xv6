@@ -57,6 +57,11 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
+ifndef BLNCFLG
+BLNCFLG := OFF
+endif
+
+CFLAGS += Dbob=$(BLNCFLG)	# To all
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb
 CFLAGS += -MD
 CFLAGS += -mcmodel=medany
@@ -159,9 +164,7 @@ ifndef CPUS
 CPUS := 3
 endif
 CFLAGS += -Dnumcpus=$(CPUS)
-ifdef BLNCFLG
-CFLAGS += -Dbob=$(BLNCFLG)
-endif
+
 #define ASSIGNMENT4 1
 
 
