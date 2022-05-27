@@ -314,11 +314,13 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
+    flags |= PTE_COW;                                    // Assignment 3 - Mark the page as COW
+    flags &= PTE_W;                                      // Assignment 3 - Clear PTE_W to make page readonly
     if((mem = kalloc()) == 0)
       goto err;
-    memmove(mem, (char*)pa, PGSIZE);
+    // memmove(mem, (char*)pa, PGSIZE);                 // Assignment 3 - Don't copy the page content right away
     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+      kfree(mem); // Might want to remove?
       goto err;
     }
   }
