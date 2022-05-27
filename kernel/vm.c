@@ -7,6 +7,24 @@
 #include "fs.h"
 
 #define NUM_PYS_PAGES ((PHYSTOP-KERNBASE) / PGSIZE)                 // Assignment 3
+uint64 page_refs[NUM_PYS_PAGES];            // The table of page references, indexed by the physical address divided by PGSIZE.
+
+void add_ref(uint64 *pa){
+    page_refs[(uint64)pa / PGSIZE]++;   // Need to do with CAS
+}
+
+void rem_ref(uint64 *pa){
+    if (page_refs[(uint64)pa / PGSIZE] <= 0){    // Need to do with CAS
+        printf("rem_ref(): PROBLEM - Trying to remove a reference to a supposedly free page?");
+        return;
+    }
+
+    page_refs[(uint64)pa / PGSIZE]--;   // Need to do with CAS
+
+    if(page_refs[(uint64)pa / PGSIZE] == 0){
+        kfree(pa);          // All references removed, need to free page.
+    }
+}
 
 /*
  * the kernel's page table.
