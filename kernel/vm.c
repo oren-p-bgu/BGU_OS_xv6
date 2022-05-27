@@ -6,6 +6,8 @@
 #include "defs.h"
 #include "fs.h"
 
+#define NUM_PYS_PAGES ((PHYSTOP-KERNBASE) / PGSIZE)                 // Assignment 3
+
 /*
  * the kernel's page table.
  */
