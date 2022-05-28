@@ -78,5 +78,7 @@ kalloc(void)
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
+
+add_ref((void*)r);
   return (void*)r;
 }

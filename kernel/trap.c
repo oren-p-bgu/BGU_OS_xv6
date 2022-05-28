@@ -54,7 +54,7 @@ usertrap(void)
       // pagefault - Assignment 3
       uint64 start_va = PGROUNDDOWN(r_stval()); // Get virtual address of the start of the pagefault causing page
       pte_t *pte;
-      pte = walkaddr(p->pagetable, start_va);   // Get the page table entry of that page on the current process
+      pte = (pte_t *) walkaddr(p->pagetable, start_va);   // Get the page table entry of that page on the current process
       if (pte == 0) {
           printf("usertrap(): PROBLEM! Couldn't find page!\n");
           p->killed = 1;

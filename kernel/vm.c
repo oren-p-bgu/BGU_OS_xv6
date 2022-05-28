@@ -9,22 +9,30 @@
 #define NUM_PYS_PAGES ((PHYSTOP-KERNBASE) / PGSIZE)                 // Assignment 3
 uint64 page_refs[NUM_PYS_PAGES];            // The table of page references, indexed by the physical address divided by PGSIZE.
 
-void add_ref(uint64 *pa){
-    page_refs[(uint64)pa / PGSIZE]++;   // Need to do with CAS
+uint64 ref_index(void *pa){
+    return ((uint64)pa - KERNBASE )/ PGSIZE;
 }
 
-void rem_ref(uint64 *pa){
-    if (page_refs[(uint64)pa / PGSIZE] <= 0){    // Need to do with CAS
+void add_ref(void *pa){
+    // printf("test: %d",ref_index(pa));
+    page_refs[ref_index(pa)]++;   // Need to do with CAS
+}
+
+// Returns 1 if that was the last ref, 0 otherwise.
+void rem_ref(void *pa){
+    if (page_refs[ref_index(pa)] <= 0){    // Need to do with CAS
         printf("rem_ref(): PROBLEM - Trying to remove a reference to a supposedly free page?");
         return;
     }
 
-    page_refs[(uint64)pa / PGSIZE]--;   // Need to do with CAS
+    page_refs[ref_index(pa)]--;   // Need to do with CAS
 
-    if(page_refs[(uint64)pa / PGSIZE] == 0){
+    if(page_refs[ref_index(pa)] == 0){
         kfree(pa);          // All references removed, need to free page.
     }
 }
+
+
 
 /*
  * the kernel's page table.
@@ -200,7 +208,8 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not a leaf");
     if(do_free){
       uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+      //kfree((void*)pa);  // Use rem_ref instead of kfree
+        rem_ref((void*)pa);
     }
     *pte = 0;
   }
@@ -255,7 +264,8 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     }
     memset(mem, 0, PGSIZE);
     if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
-      kfree(mem);
+      //kfree(mem);
+        rem_ref(mem);
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
@@ -298,7 +308,8 @@ freewalk(pagetable_t pagetable)
       panic("freewalk: leaf");
     }
   }
-  kfree((void*)pagetable);
+  //kfree((void*)pagetable);
+    rem_ref((void*)pagetable);
 }
 
 // Free user memory pages,
@@ -333,14 +344,24 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     flags |= PTE_COW;                                    // Assignment 3 - Mark the page as COW
-    flags &= PTE_W;                                      // Assignment 3 - Clear PTE_W to make page readonly
+    flags &= (~PTE_W);                                      // Assignment 3 - Clear PTE_W to make page readonly
     if((mem = kalloc()) == 0)
       goto err;
-    // memmove(mem, (char*)pa, PGSIZE);                 // Assignment 3 - Don't copy the page content right away
+    add_ref(mem);   // Increment page reference
+    memmove(mem, (char*)pa, PGSIZE);                 // Assignment 3 - Don't copy the page content right away
     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem); // Might want to remove?
+      //kfree(mem); // Replace
+        rem_ref(mem);
       goto err;
     }
+
+
+
+    // Need to update parent table as flags were changed.
+      //uvmunmap(old, i, PGSIZE, 0);
+     // if (mappages(old, i, PGSIZE, pa, flags) != 0) {
+     //     goto err;
+     // }
   }
   return 0;
 
