@@ -49,27 +49,33 @@ usertrap(void) {
 
     if (r_scause() == 13 || r_scause() == 15) {                                 // pagefault - Assignment 3
         // pagefault - Assignment 3
+
         uint64 start_va = PGROUNDDOWN(r_stval()); // Get virtual address of the start of the pagefault causing page
         pte_t *pte;
-        pte = (pte_t *) walkaddr(p->pagetable,
-                                 start_va);   // Get the page table entry of that page on the current process
+        pte = (pte_t *) walk(p->pagetable, start_va, 0);   // Get the page table entry of that page on the current process
+        printf("\nstart_va: %d",start_va);
+        printf("\nADDRESS: %d",(uint64)*pte);
         if (pte == 0) {
             printf("usertrap(): PROBLEM! Couldn't find page!\n");
             p->killed = 1;
-        } else if ((*pte & PTE_V) && (*pte & PTE_U) && (*pte & PTE_COW)) {
+        } else if (*pte & PTE_COW) {
             uint flags = PTE_FLAGS(*pte);
             flags |= PTE_W;       // Add write permission to the page now.
             flags &= (~PTE_COW);  // Will be copied, so no longer copy on write.
 
             char *mem = kalloc();
             char *pa = (char *) PTE2PA(*pte);
+
             memmove(mem, pa, PGSIZE);         // New copy of page
-            uvmunmap(p->pagetable, start_va, PGSIZE, 0);
+            uvmunmap(p->pagetable, start_va, 1, 0);
             rem_ref((void*)pa);
             if (mappages(p->pagetable, start_va, PGSIZE, (uint64) mem, flags) != 0) {
                 printf("usertrap(): PROBLEM! Something went wrong in mappages!\n");
                 p->killed = 1;
             }
+        } else{
+            printf("\nPage fault not from COW!\n");
+            p->killed = 1;
         }
 
     } else if (r_scause() == 8) {

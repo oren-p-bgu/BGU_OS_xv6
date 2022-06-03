@@ -16,21 +16,20 @@ uint64 ref_index(void *pa) {
 }
 
 void add_ref(void *pa) {
-    printf("Add: %d , new count: %d | ",ref_index(pa), page_refs[ref_index(pa)]+1);
+    //printf("Add: %d , new count: %d | ",ref_index(pa), page_refs[ref_index(pa)]+1);
     int old;
     do{
         old = page_refs[ref_index(pa)];
     } while(cas(&page_refs[ref_index(pa)], old, old+1));
 }
 
-// Returns 1 if that was the last ref, 0 otherwise.
 void rem_ref(void *pa) {
     if (page_refs[ref_index(pa)] <= 0) {    // Need to do with CAS
-        printf("rem_ref(): PROBLEM - Trying to remove a reference to a supposedly free page?");
+        kfree(pa);
         return;
     }
 
-    printf("Rem: %d , new count: %d | ",ref_index(pa), page_refs[ref_index(pa)]-1);
+    //printf("Rem: %d , new count: %d | ",ref_index(pa), page_refs[ref_index(pa)]-1);
 
     int old;
     do{
@@ -38,7 +37,7 @@ void rem_ref(void *pa) {
     } while(cas(&page_refs[ref_index(pa)], old, old-1));
 
     if (page_refs[ref_index(pa)] == 0) {
-        printf("FREED: %d | ",ref_index(pa));
+        //printf("FREED: %d | ",ref_index(pa));
         kfree(pa);          // All references removed, need to free page.
     }
 }
@@ -329,7 +328,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz) {
     pte_t *pte;
     uint64 pa, i;
     uint flags;
-    char *mem;
+    //char *mem;
 
     for (i = 0; i < sz; i += PGSIZE) {
         if ((pte = walk(old, i, 0)) == 0)
@@ -340,27 +339,25 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz) {
         flags = PTE_FLAGS(*pte);
         flags |= PTE_COW;                                    // Assignment 3 - Mark the page as COW
         flags &= (~PTE_W);                                      // Assignment 3 - Clear PTE_W to make page readonly
-        if ((mem = kalloc()) == 0)
+        // if ((mem = kalloc()) == 0)
+        //     goto err;
+        if (mappages(new, i, PGSIZE, (uint64) pa, flags) != 0)
             goto err;
-        add_ref(mem);   // Increment page reference
-        memmove(mem, (char *) pa, PGSIZE);                 // Assignment 3 - Don't copy the page content right away
-        if (mappages(new, i, PGSIZE, (uint64) mem, flags) != 0) {
+        add_ref((void*)pa);   // Increment page reference
+        // memmove(mem, (char *) pa, PGSIZE);                 // Assignment 3 - Don't copy the page content right away
+        uvmunmap(old,i,1,0);
+        if (mappages(old, i, PGSIZE, pa, flags) != 0) {
             //kfree(mem); // Replace
-            rem_ref(mem);
+            //rem_ref(mem);
             goto err;
         }
 
 
-
-        // Need to update parent table as flags were changed.
-        //uvmunmap(old, i, PGSIZE, 0);
-        // if (mappages(old, i, PGSIZE, pa, flags) != 0) {
-        //     goto err;
-        // }
     }
     return 0;
 
     err:
+    printf("\nuvmcopy(): Error occured.\n");
     uvmunmap(new, 0, i / PGSIZE, 1);
     return -1;
 }
