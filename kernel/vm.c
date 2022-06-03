@@ -6,6 +6,8 @@
 #include "defs.h"
 #include "fs.h"
 
+extern uint64 cas(volatile void *addr, int expected, int newval);   // Assignment 2 - CAS
+
 #define NUM_PYS_PAGES ((PHYSTOP-KERNBASE) / PGSIZE)                 // Assignment 3
 uint64 page_refs[NUM_PYS_PAGES];            // The table of page references, indexed by the physical address divided by PGSIZE.
 
@@ -15,7 +17,10 @@ uint64 ref_index(void *pa) {
 
 void add_ref(void *pa) {
     printf("Add: %d , new count: %d | ",ref_index(pa), page_refs[ref_index(pa)]+1);
-    page_refs[ref_index(pa)]++;   // Need to do with CAS
+    int old;
+    do{
+        old = page_refs[ref_index(pa)];
+    } while(cas(&page_refs[ref_index(pa)], old, old+1));
 }
 
 // Returns 1 if that was the last ref, 0 otherwise.
@@ -26,7 +31,11 @@ void rem_ref(void *pa) {
     }
 
     printf("Rem: %d , new count: %d | ",ref_index(pa), page_refs[ref_index(pa)]-1);
-    page_refs[ref_index(pa)]--;   // Need to do with CAS
+
+    int old;
+    do{
+        old = page_refs[ref_index(pa)];
+    } while(cas(&page_refs[ref_index(pa)], old, old-1));
 
     if (page_refs[ref_index(pa)] == 0) {
         printf("FREED: %d | ",ref_index(pa));

@@ -6,6 +6,8 @@
 #include "proc.h"
 #include "defs.h"
 
+extern uint64 cas(volatile void *addr, int expected, int newval);   // Assignment 2 - CAS
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
