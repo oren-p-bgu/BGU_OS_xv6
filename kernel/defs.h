@@ -145,6 +145,7 @@ void            trapinit(void);
 void            trapinithart(void);
 extern struct spinlock tickslock;
 void            usertrapret(void);
+int             COWHandler(uint64);
 
 // uart.c
 void            uartinit(void);
@@ -172,7 +173,7 @@ pte_t * walk(pagetable_t pagetable, uint64 va, int alloc);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 void            add_ref(void *);          // Assignment 3 - For kalloc to use
-void            rem_ref(void *);          // Assignment 3 - For kalloc to use
+int rem_ref(void *);          // Assignment 3 - For kalloc to use
 uint64          ref_index(void *);
 
 // plic.c

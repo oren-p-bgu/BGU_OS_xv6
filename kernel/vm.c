@@ -23,12 +23,11 @@ void add_ref(void *pa) {
     } while(cas(&page_refs[ref_index(pa)], old, old+1));
 }
 
-void rem_ref(void *pa) {
-    if (page_refs[ref_index(pa)] <= 0) {    // Need to do with CAS
-        kfree(pa);
-        return;
+// Returns new count
+int rem_ref(void *pa) {
+    if (page_refs[ref_index(pa)] == 0){
+        return 0;
     }
-
     //printf("Rem: %d , new count: %d | ",ref_index(pa), page_refs[ref_index(pa)]-1);
 
     int old;
@@ -36,10 +35,7 @@ void rem_ref(void *pa) {
         old = page_refs[ref_index(pa)];
     } while(cas(&page_refs[ref_index(pa)], old, old-1));
 
-    if (page_refs[ref_index(pa)] == 0) {
-        //printf("FREED: %d | ",ref_index(pa));
-        kfree(pa);          // All references removed, need to free page.
-    }
+    return old - 1;
 }
 
 
@@ -209,8 +205,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free) {
             panic("uvmunmap: not a leaf");
         if (do_free) {
             uint64 pa = PTE2PA(*pte);
-            //kfree((void *) pa);  // Use rem_ref instead of kfree
-            rem_ref((void*)pa);
+            kfree((void *) pa);
         }
         *pte = 0;
     }
@@ -262,8 +257,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz) {
         }
         memset(mem, 0, PGSIZE);
         if (mappages(pagetable, a, PGSIZE, (uint64) mem, PTE_W | PTE_X | PTE_R | PTE_U) != 0) {
-            //kfree(mem);
-            rem_ref(mem);
+            kfree(mem);
             uvmdealloc(pagetable, a, oldsz);
             return 0;
         }
@@ -304,8 +298,7 @@ freewalk(pagetable_t pagetable) {
             panic("freewalk: leaf");
         }
     }
-    //kfree((void *) pagetable);
-    rem_ref((void*)pagetable);
+    kfree((void *) pagetable);
 }
 
 // Free user memory pages,
@@ -339,18 +332,19 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz) {
         flags = PTE_FLAGS(*pte);
         flags |= PTE_COW;                                    // Assignment 3 - Mark the page as COW
         flags &= (~PTE_W);                                      // Assignment 3 - Clear PTE_W to make page readonly
+        *pte = ((*pte) & (~PTE_W)) | PTE_COW;               // Assignment 3 - Set parent's flags
         // if ((mem = kalloc()) == 0)
         //     goto err;
         if (mappages(new, i, PGSIZE, (uint64) pa, flags) != 0)
             goto err;
         add_ref((void*)pa);   // Increment page reference
         // memmove(mem, (char *) pa, PGSIZE);                 // Assignment 3 - Don't copy the page content right away
-        uvmunmap(old,i,1,0);
-        if (mappages(old, i, PGSIZE, pa, flags) != 0) {
-            //kfree(mem); // Replace
-            //rem_ref(mem);
-            goto err;
-        }
+        // uvmunmap(old,i,1,0);
+        //if (mappages(old, i, PGSIZE, pa, flags) != 0) {
+        //    //kfree(mem); // Replace
+        //    //rem_ref(mem);
+        //    goto err;
+        // }
 
 
     }
@@ -383,6 +377,16 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len) {
 
     while (len > 0) {
         va0 = PGROUNDDOWN(dstva);
+
+        // Need to check if page is COW page before walkaddr
+        pte_t* pte = walk(pagetable, va0, 0);
+        if (pte && (*pte & PTE_COW) != 0){
+            // COW page!
+            if (COWHandler(va0) != 0){
+                return -1;
+            }
+        }
+
         pa0 = walkaddr(pagetable, va0);
         if (pa0 == 0)
             return -1;

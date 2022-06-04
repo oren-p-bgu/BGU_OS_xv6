@@ -34,8 +34,7 @@ freerange(void *pa_start, void *pa_end) {
     char *p;
     p = (char *) PGROUNDUP((uint64) pa_start);
     for (; p + PGSIZE <= (char *) pa_end; p += PGSIZE)
-        // kfree(p);     // Assignment 3
-        rem_ref(p);
+        kfree(p);
 }
 
 // Free the page of physical memory pointed at by v,
@@ -45,6 +44,11 @@ freerange(void *pa_start, void *pa_end) {
 void
 kfree(void *pa) {
     struct run *r;
+
+    // If there are more references, don't free.
+    if (rem_ref(pa) > 0){
+        return;
+    }
 
     if (((uint64) pa % PGSIZE) != 0 || (char *) pa < end || (uint64) pa >= PHYSTOP)
         panic("kfree");

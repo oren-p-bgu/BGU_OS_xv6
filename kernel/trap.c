@@ -27,12 +27,10 @@ trapinithart(void) {
     w_stvec((uint64) kernelvec);
 }
 
+// Needs to take in va because it can be called both by a trap or when copying from kernel to user
 int
-COWHandler(){
-    // pagefault - Assignment 3
-    // pagefault - Assignment 3
-
-    uint64 start_va = PGROUNDDOWN(r_stval()); // Get virtual address of the start of the pagefault causing page
+COWHandler(uint64 va) {
+    uint64 start_va = PGROUNDDOWN(va); // Get virtual address of the start of the page
     pte_t *pte;
     pagetable_t pagetable = myproc()->pagetable;
     if (start_va >= MAXVA) {
@@ -68,6 +66,7 @@ COWHandler(){
     }
     return 0;
 }
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -89,7 +88,7 @@ usertrap(void) {
     p->trapframe->epc = r_sepc();
 
     if (r_scause() == 13 || r_scause() == 15) {
-        if (COWHandler() != 0){
+        if (COWHandler(r_stval()) != 0) {
             p->killed = 1;
         }
     } else if (r_scause() == 8) {
