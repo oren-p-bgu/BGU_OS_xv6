@@ -377,6 +377,9 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len) {
 
     while (len > 0) {
         va0 = PGROUNDDOWN(dstva);
+        if (va0 >= MAXVA){
+            return -1;
+        }
 
         // Need to check if page is COW page before walkaddr
         pte_t* pte = walk(pagetable, va0, 0);

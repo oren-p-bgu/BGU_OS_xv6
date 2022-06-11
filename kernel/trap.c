@@ -50,6 +50,7 @@ COWHandler(uint64 va) {
         return -1;
     }
 
+
     uint flags = PTE_FLAGS(*pte);
     flags |= PTE_W;       // Add write permission to the page now.
     flags &= (~PTE_COW);  // Will be copied, so no longer copy on write.
@@ -57,9 +58,15 @@ COWHandler(uint64 va) {
     char *mem = kalloc();
     char *pa = (char *) PTE2PA(*pte);
 
-    memmove(mem, pa, PGSIZE);         // New copy of page
+    if (mem == 0){   // Kalloc was failing during execout, needed to add this check and rem_free to kfree
+        printf("COWHandler(): kalloc failed.\n");
+        return -1;
+    }
+    //printf("TEST1 - dst(mem):%x , src(pa):%x\n", mem, pa);
+    memmove(mem, (void*)pa, PGSIZE);         // New copy of page THIS IS THE LINE THAT CRASHED EXECOUT TEST
+    //printf("TEST2\n");
     uvmunmap(pagetable, start_va, 1, 0);
-    rem_ref((void *) pa);
+    kfree((void *) pa); // Changed from rem_ref to kfree to fix execout test
     if (mappages(pagetable, start_va, PGSIZE, (uint64) mem, flags) != 0) {
         printf("usertrap(): PROBLEM! Something went wrong in mappages!\n");
         return -1;
