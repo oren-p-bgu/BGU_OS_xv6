@@ -388,10 +388,12 @@ bmap(struct inode *ip, uint bn) {
     }
 
     // Assignment 4
-    bn -= NDIRECT;
+    bn -= NINDIRECT;
     if (bn < NDOUBLEINDIRECT) {
-        uint layer1 = bn / BSIZE;   // The index we need to go to on the block of addrs[NDIRECT+1]
-        uint layer2 = bn % BSIZE;   // The index we need to go to on the block of the one we got from the previous layer
+        printf("Entered - bn: %d", bn);
+        uint layer1 = bn / NINDIRECT;   // The index we need to go to on the block of addrs[NDIRECT+1]
+        uint layer2 = bn % NINDIRECT;   // The index we need to go to on the block of the one we got from the previous layer
+        printf("layer1: %d, layer2: %d\n", layer1, layer2);
         struct buf *bp2;
         if ((addr = ip->addrs[NDIRECT+1]) == 0)
             ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
@@ -450,6 +452,7 @@ itrunc(struct inode *ip) {
 
     // Assignment 4
     if (ip->addrs[NDIRECT+1]) {
+        printf("Entered 453");
         bp = bread(ip->dev, ip->addrs[NDIRECT+1]);
         a = (uint *) bp->data;
         for (j = 0; j < NINDIRECT; j++) {

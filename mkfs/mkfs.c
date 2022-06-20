@@ -280,6 +280,7 @@ iappend(uint inum, void *xp, int n) {
             }
             x = xint(indirect[fbn - NDIRECT]);
         } else { // Assignment 4
+            printf("Entered 283");
             uint layer1 = (fbn - NDIRECT - NINDIRECT) / NINDIRECT;
             uint layer2 = (fbn - NDIRECT - NINDIRECT) % NINDIRECT;
             if (xint(din.addrs[NDIRECT+1]) == 0) {
