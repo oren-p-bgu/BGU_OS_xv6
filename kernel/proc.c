@@ -654,3 +654,16 @@ procdump(void)
     printf("\n");
   }
 }
+
+// Assignment 4
+int
+symlink(const char *oldpath, const char* newpath)
+{
+    return -1;
+}
+
+int
+readlink(const char * pathname, char *buf, int bufsize)
+{
+    return -1;
+}

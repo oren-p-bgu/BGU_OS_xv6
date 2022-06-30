@@ -100,11 +100,24 @@ sys_uptime(void)
 uint64
 sys_symlink(void)
 {
-    return 0;
+    char oldpath[MAXPATH];
+    char newpath[MAXPATH];
+
+    if((argstr(0, oldpath, MAXPATH)) < 0 || (argstr(1, newpath, MAXPATH)) < 0)
+        return -1;
+
+    return symlink(oldpath, newpath);
 }
 
 uint64
 sys_readlink(void)
 {
-    return 0;
+    char pathname[MAXPATH];
+    char *buf;
+    int bufsize;
+
+    if((argstr(0, pathname, MAXPATH)) < 0 || (argstr(1, buf, MAXPATH)) < 0 || argint(2,&bufsize))
+        return -1;
+
+    return readlink(pathname, buf, bufsize);
 }
