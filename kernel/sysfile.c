@@ -263,6 +263,13 @@ create(char *path, short type, short major, short minor) {
         if (dirlink(ip, ".", ip->inum) < 0 || dirlink(ip, "..", dp->inum) < 0)
             panic("create dots");
     }
+    if (type == T_SYM) { 
+        int len = strlen(name);
+        name[len] = '>';
+        name[len+1]='\0';
+    }
+    
+
 
     if (dirlink(dp, name, ip->inum) < 0)
         panic("create: dirlink");
@@ -282,7 +289,6 @@ sys_open(void) {
 
     if ((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
         return -1;
-
     begin_op();
     //xv6 : First lets see wether we need to create the file
     if (omode & O_CREATE) {
@@ -569,17 +575,56 @@ sys_pipe(void) {
 // Assignment 4
 int
 symlink( char *oldpath,  char *newpath) {
-    struct file *f;
-    struct inode *ip;
-    
-    begin_op();
+    struct inode *ip, *dp;
+    short type = T_SYM;
+    char name[DIRSIZ];
 
-    if ((ip = create(newpath, T_SYM, 0, 0)) == 0) {
+    begin_op();
+    if ((dp = nameiparent(newpath, name)) == 0){
+        printf("Could not find parent dir");
         end_op();
         return -1;
     }
 
-    if((f = filealloc()) == 0 ){
+    ilock(dp);
+
+    if ((ip = dirlookup(dp, name, 0)) != 0) {
+        iunlockput(dp);
+        printf("There is already a file with that name..");
+        end_op();
+        return -1;
+    }
+
+    if ((ip = ialloc(dp->dev, type)) == 0)
+        panic("create: ialloc");
+
+    ilock(ip);
+    ip->major = 0;
+    ip->minor = 0;
+    ip->nlink = 1;
+    iupdate(ip);
+
+    //Special care:
+    int len = strlen(name);
+    name[len] = '-';
+    name[len+1]='>';
+    for (int j =0,i = 0;i<strlen(oldpath);i++){
+        if (oldpath[i] != '/'){
+            name[len+2+j] = oldpath[i];
+            j++;
+        }
+    }
+    name[len+2+strlen(oldpath)] = 0;
+
+    if (dirlink(dp, name, ip->inum) < 0)
+        panic("create: dirlink");
+
+    iunlockput(dp);
+    
+    struct file *f;
+    
+
+    if((f = filealloc()) == 0){
         if(f)
             fileclose(f);
         iunlockput(ip);
@@ -593,12 +638,11 @@ symlink( char *oldpath,  char *newpath) {
     f->readable = 0;
     f->writable = 0;
 
-    int len = strlen(oldpath)+1;
+    len = strlen(oldpath)+1;
     writei(ip, 0, (uint64)&len, 0, sizeof(int));
     writei(ip, 0, (uint64)oldpath, sizeof(int), len + 1);
     iupdate(ip);
     iunlockput(ip);
-
 
     end_op();
     return 0;

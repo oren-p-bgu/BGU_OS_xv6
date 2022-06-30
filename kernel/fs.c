@@ -559,7 +559,21 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n) {
 
 int
 namecmp(const char *s, const char *t) {
-    return strncmp(s, t, DIRSIZ);
+    if(strncmp(s, t, DIRSIZ) == 0){
+        return 0;
+    }else{
+        int hasarrow = 0;
+        for(int i = 0;i < strlen(t);i++){
+            if(t[i] == '-' && t[i+1] == '>'){
+                hasarrow = 1;
+                break;
+            }
+        }
+        if (hasarrow && strncmp(s, t, strlen(s)) == 0){
+            return 0;
+        }
+    }
+    return 1;
 }
 
 // Look for a directory entry in a directory.
@@ -627,6 +641,7 @@ dirlink(struct inode *dp, char *name, uint inum) {
 // If no name to remove, return 0.
 //
 // Examples:
+//   skipelem("a/bb/c->/kill", name) = "bb/c->/kill", setting name = "a"
 //   skipelem("a/bb/c", name) = "bb/c", setting name = "a"
 //   skipelem("///a//bb", name) = "bb", setting name = "a"
 //   skipelem("a", name) = "", setting name = "a"
@@ -636,14 +651,15 @@ static char *
 skipelem(char *path, char *name) {
     char *s;
     int len;
-
     while (*path == '/')
         path++;
     if (*path == 0)
         return 0;
     s = path;
     while (*path != '/' && *path != 0)
+    {
         path++;
+    }
     len = path - s;
     if (len >= DIRSIZ)
         memmove(name, s, DIRSIZ);
@@ -676,11 +692,11 @@ namex(char *path, int nameiparent, char *name) {
             return 0;
         }
         if (nameiparent && *path == '\0') {
-            // Stop one level early.
             iunlock(ip);
             return ip;
         }
         if ((next = dirlookup(ip, name, 0)) == 0) {
+            // Stop one level early.
             iunlockput(ip);
             return 0;
         }
