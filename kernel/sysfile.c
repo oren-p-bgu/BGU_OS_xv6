@@ -114,6 +114,9 @@ sys_fstat(void)
     return -1;
   return filestat(f, st);
 }
+/*Should check for existance of new file: not exist? continue, else exception.
+fetch new node , edit the contents to be soft link and save it.
+*/
 
 // Create the path new as a link to the same inode as old.
 uint64
@@ -252,6 +255,9 @@ create(char *path, short type, short major, short minor)
   if((ip = dirlookup(dp, name, 0)) != 0){
     iunlockput(dp);
     ilock(ip);
+    if(type == T_SYMLINK){
+      return ip;
+    }
     if(type == T_FILE && (ip->type == T_FILE || ip->type == T_DEVICE))
       return ip;
     iunlockput(ip);
@@ -282,7 +288,80 @@ create(char *path, short type, short major, short minor)
 
   return ip;
 }
+uint64
+sys_symlink(void)
+{
+  char target[MAXPATH], path[MAXARG];
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0){
+    return -1;
+  }
+  //printf(“creating a sym link. Target(%s). Path(%s)\n”, target, path);
 
+  begin_op();
+  struct inode *ip = create(path, T_SYMLINK, 0, 0);
+  if(ip == 0){
+    end_op();
+    return -1;
+  }
+
+  int len = strlen(target);
+  writei(ip, 0, (uint64)&len, 0, sizeof(int));
+  writei(ip, 0, (uint64)target, sizeof(int), len + 1);
+  iupdate(ip);
+  iunlockput(ip);
+
+  end_op();
+  return 0;
+}
+char*
+getpath_ifsymlink(char* gpath){
+  char path[MAXARG];
+  for(int i =0; i <MAXARG;i++){
+    if (gpath[i] == 0 ){
+        break;
+    }
+    path[i]=gpath[i];
+  }
+  struct inode *ip;
+  if((ip = namei(path)) == 0){
+    end_op();
+    return gpath;
+  }
+  ilock(ip);
+  if ((ip->type == T_SYMLINK)){
+  printf("OPEN SYMLINK");
+ int count = 0;
+ while (ip->type == T_SYMLINK && count < 10) {
+   int len = 0;
+   readi(ip, 0, (uint64)&len, 0, sizeof(int));
+
+   if(len > MAXPATH)
+     panic("open: corrupted symlink inode");
+
+   readi(ip, 0, (uint64)path, sizeof(int), len + 1);
+   iunlockput(ip);
+   if((ip = namei(path)) == 0){
+     end_op();
+     return gpath;
+   }
+   ilock(ip);
+   count++;
+ }
+ if (count >= 10) {
+   printf("e got a cycle!\n");
+   iunlockput(ip);
+   end_op();
+   return gpath;
+ }
+}
+for(int i =0; i <MAXARG;i++){
+  if (path[i] == 0 ){
+      break;
+  }
+  gpath[i]=path[i];
+}
+return gpath;
+}
 uint64
 sys_open(void)
 {
@@ -315,6 +394,36 @@ sys_open(void)
       return -1;
     }
   }
+
+
+if ((ip->type == T_SYMLINK)){
+  printf("OPEN SYMLINK");
+ int count = 0;
+ while (ip->type == T_SYMLINK && count < 10) {
+   int len = 0;
+   readi(ip, 0, (uint64)&len, 0, sizeof(int));
+
+   if(len > MAXPATH)
+     panic("open: corrupted symlink inode");
+
+   readi(ip, 0, (uint64)path, sizeof(int), len + 1);
+   iunlockput(ip);
+   if((ip = namei(path)) == 0){
+     end_op();
+     return -1;
+   }
+   ilock(ip);
+   count++;
+ }
+ if (count >= 10) {
+   printf("e got a cycle!\n");
+   iunlockput(ip);
+   end_op();
+   return -1;
+ }
+}
+
+
 
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
     iunlockput(ip);
@@ -440,8 +549,7 @@ sys_exec(void)
     if(fetchstr(uarg, argv[i], PGSIZE) < 0)
       goto bad;
   }
-
-  int ret = exec(path, argv);
+  int ret = exec(getpath_ifsymlink(path), argv);
 
   for(i = 0; i < NELEM(argv) && argv[i] != 0; i++)
     kfree(argv[i]);

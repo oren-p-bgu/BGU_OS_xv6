@@ -94,10 +94,13 @@ filestat(struct file *f, uint64 addr)
     ilock(f->ip);
     stati(f->ip, &st);
     iunlock(f->ip);
-    if(copyout(p->pagetable, addr, (char *)&st, sizeof(st)) < 0)
+    if(copyout(p->pagetable, addr, (char *)&st, sizeof(st)) < 0){
+      printf("No copyout");
       return -1;
+    }
     return 0;
   }
+  printf("No ftype");
   return -1;
 }
 
