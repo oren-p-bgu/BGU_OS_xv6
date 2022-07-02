@@ -284,7 +284,7 @@ sys_open(void) {
         return -1;
 
     begin_op();
-
+    //xv6 : First lets see wether we need to create the file
     if (omode & O_CREATE) {
         ip = create(path, T_FILE, 0, 0);
         if (ip == 0) {
@@ -301,6 +301,32 @@ sys_open(void) {
             iunlockput(ip);
             end_op();
             return -1;
+        }
+    }
+    //If symlink:
+    if ((ip->type == T_SYM)){
+        int cycles = 0;
+        while (ip->type == T_SYM && cycles < 10) {
+            int len = 0;
+            readi(ip, 0, (uint64)&len, 0, sizeof(int));
+
+            if(len > MAXPATH)
+                panic("Fail in open: symlink path too big");
+
+            readi(ip, 0, (uint64)path, sizeof(int), len + 1);
+            iunlockput(ip);
+            if((ip = namei(path)) == 0){
+                end_op();
+                return -1;
+            }
+            ilock(ip);
+            cycles++;
+            if (cycles >= 10) {
+                printf("Too many cycles in soft symlink.\n");
+                iunlockput(ip);
+                end_op();
+                return -1;
+            }
         }
     }
 
@@ -328,7 +354,6 @@ sys_open(void) {
     f->ip = ip;
     f->readable = !(omode & O_WRONLY);
     f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
-
     if ((omode & O_TRUNC) && ip->type == T_FILE) {
         itrunc(ip);
     }
@@ -385,6 +410,43 @@ sys_chdir(void) {
         return -1;
     }
     ilock(ip);
+
+    //Assignment 4
+
+    begin_op();
+
+    if((ip = namei(path)) == 0){
+        end_op();
+        return -1;
+    }
+    if (ip->type == T_SYM){
+        int cycles = 0;
+        while (ip->type == T_SYM && cycles < 10) {
+            int len = 0;
+            readi(ip, 0, (uint64)&len, 0, sizeof(int));
+
+            if(len > MAXPATH)
+                panic("Fail in chdir: symlink path too big");
+
+            readi(ip, 0, (uint64)path, sizeof(int), len + 1);
+            iunlockput(ip);
+            if((ip = namei(path)) == 0){
+                end_op();
+                return -1;
+            }
+            ilock(ip);
+            cycles++;
+            if (cycles >= 10) {
+                printf("Too many cycles in soft symlink.\n");
+                iunlockput(ip);
+                end_op();
+                return -1;
+            }
+        }
+    }
+
+    //End
+
     if (ip->type != T_DIR) {
         iunlockput(ip);
         end_op();
@@ -402,7 +464,7 @@ sys_exec(void) {
     char path[MAXPATH], *argv[MAXARG];
     int i;
     uint64 uargv, uarg;
-
+    struct inode *ip;
     if (argstr(0, path, MAXPATH) < 0 || argaddr(1, &uargv) < 0) {
         return -1;
     }
@@ -424,6 +486,42 @@ sys_exec(void) {
         if (fetchstr(uarg, argv[i], PGSIZE) < 0)
             goto bad;
     }
+    //Assigment4:
+    begin_op();
+
+    if((ip = namei(path)) == 0){
+        end_op();
+        return -1;
+    }
+    ilock(ip);
+    if (ip->type == T_SYM){
+        int cycles = 0;
+        while (ip->type == T_SYM && cycles < 10) {
+            int len = 0;
+            readi(ip, 0, (uint64)&len, 0, sizeof(int));
+
+            if(len > MAXPATH)
+                panic("Fail in open: symlink path too big");
+
+            readi(ip, 0, (uint64)path, sizeof(int), len + 1);
+            iunlockput(ip);
+            if((ip = namei(path)) == 0){
+                end_op();
+                return -1;
+            }
+            ilock(ip);
+            cycles++;
+            if (cycles >= 10) {
+                printf("Too many cycles in soft symlink.\n");
+                iunlockput(ip);
+                end_op();
+                return -1;
+            }
+        }
+    }
+    end_op();
+    iunlock(ip);
+    //End
 
     int ret = exec(path, argv);
 
@@ -473,7 +571,7 @@ int
 symlink( char *oldpath,  char *newpath) {
     struct file *f;
     struct inode *ip;
-
+    
     begin_op();
 
     if ((ip = create(newpath, T_SYM, 0, 0)) == 0) {
@@ -495,32 +593,42 @@ symlink( char *oldpath,  char *newpath) {
     f->readable = 0;
     f->writable = 0;
 
-    int len = strlen(oldpath);
+    int len = strlen(oldpath)+1;
     writei(ip, 0, (uint64)&len, 0, sizeof(int));
     writei(ip, 0, (uint64)oldpath, sizeof(int), len + 1);
     iupdate(ip);
     iunlockput(ip);
 
-    iunlockput(ip);
+
     end_op();
     return 0;
 }
 
-int
-readlink(char *pathname, char *buf, int bufsize) {
+int//REPLACE BUF EVERYWHERE
+readlink(char *pathname,uint64 buf, int bufsize) {
     struct inode *ip;
-
+    int pathsize;
     if ((ip = namei(pathname)) == 0)
         return -1;
 
     ilock(ip);
 
-    if (ip->type != T_SYM || ip->size > bufsize) {
+    if (ip->type != T_SYM) {
+        printf("Not a symbolic link.");
         iunlock(ip);
         return -1;
     }
-
-    safestrcpy(buf, (char *)ip->addrs, bufsize);
+    //Read the len of the path:
+    readi(ip,0,(uint64)&pathsize,0,sizeof(int));
+    if(bufsize < pathsize)
+    {
+        printf("bufsize is smaller than the length of the resolved path.");
+        iunlock(ip);
+        return -1;
+    }
+    //Read the "url"
+    readi(ip,1,buf,4,bufsize);
+    
     iunlock(ip);
     return 0;
 }

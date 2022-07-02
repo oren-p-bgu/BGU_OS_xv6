@@ -113,11 +113,11 @@ uint64
 sys_readlink(void)
 {
     char pathname[MAXPATH];
-    char *buf = 0;
+    uint64 p;
     int bufsize;
-
-    if((argstr(0, pathname, MAXPATH)) < 0 || argint(2,&bufsize) || (argstr(1, buf, bufsize)) < 0 )
+    //char * pp ;
+    if((argstr(0, pathname, MAXPATH)) < 0 || argaddr(1, &p) < 0 || (argint(2, &bufsize)) < 0 )
         return -1;
-
-    return readlink(pathname, buf, bufsize);
+        
+    return readlink(pathname, p, bufsize);
 }

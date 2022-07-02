@@ -24,7 +24,7 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int symlink(const char *oldpath, const char * newpath);  //Assignment 4
-int readlink(const char * pathname, char * buf, int bufsize); //Assignment 4
+int readlink(const char * pathname, void*, int bufsize); //Assignment 4
 
 // ulib.c
 int stat(const char*, struct stat*);
